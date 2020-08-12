@@ -12,10 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from cirq.google import api
+
+from cirq.google.devices import (
+    Bristlecone,
+    Foxtail,
+    SerializableDevice,
+    Sycamore,
+    Sycamore23,
+    XmonDevice,
+)
+
 from cirq.google.engine import (
-    engine_from_environment,
+    Calibration,
     Engine,
-    JobConfig,
+    engine_from_environment,
+    EngineJob,
+    EngineProgram,
+    EngineProcessor,
+    EngineTimeSlot,
+    ProtoVersion,
+    QuantumEngineSampler,
+    get_engine,
+    get_engine_sampler,
+)
+
+from cirq.google.gate_sets import (
+    XMON,
+    FSIM_GATESET,
+    SQRT_ISWAP_GATESET,
+    SYC_GATESET,
+    NAMED_GATESETS,
 )
 
 from cirq.google.line import (
@@ -25,37 +52,30 @@ from cirq.google.line import (
     LinePlacementStrategy,
 )
 
-from cirq.google.sim import (
-    XmonOptions,
-    XmonSimulator,
-    XmonStepResult,
+from cirq.google.ops import (
+    PhysicalZTag,
+    SycamoreGate,
+    SYC,
 )
 
-from cirq.google.convert_to_xmon_gates import (
-    ConvertToXmonGates,)
-
-from cirq.google.gate_sets import (
-    XMON,)
-
-from cirq.google.known_devices import (
-    Bristlecone,
-    Foxtail,
+from cirq.google.optimizers import (
+    ConvertToXmonGates,
+    ConvertToSqrtIswapGates,
+    ConvertToSycamoreGates,
+    GateTabulation,
+    optimized_for_sycamore,
+    optimized_for_xmon,
 )
 
-from cirq.google.optimize import (
-    optimized_for_xmon,)
-
-
-from cirq.google.programs import (
-    gate_to_proto_dict,
-    is_native_xmon_gate,
-    is_native_xmon_op,
-    pack_results,
-    schedule_from_proto_dicts,
-    schedule_to_proto_dicts,
-    unpack_results,
-    xmon_op_from_proto_dict,
+from cirq.google.op_deserializer import (
+    DeserializingArg,
+    GateOpDeserializer,
 )
 
-from cirq.google.xmon_device import (
-    XmonDevice,)
+from cirq.google.op_serializer import (
+    GateOpSerializer,
+    SerializingArg,
+)
+
+from cirq.google.serializable_gate_set import (
+    SerializableGateSet,)

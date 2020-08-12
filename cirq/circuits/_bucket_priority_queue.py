@@ -12,12 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, List, TypeVar, Generic, Iterable, Iterator, Any, \
-    TYPE_CHECKING
-
-if TYPE_CHECKING:
-    # pylint: disable=unused-import
-    from typing import Set, Optional
+from typing import (Any, Generic, Iterable, Iterator, List, Optional, Set,
+                    Tuple, TypeVar)
 
 
 TItem = TypeVar('TItem')
@@ -55,12 +51,11 @@ class BucketPriorityQueue(Generic[TItem]):
                 in the priority queue. Note that duplicates of an item may still
                 be enqueued, as long as they have different priorities.
         """
-        self._buckets = []  # type: List[List[TItem]]
+        self._buckets: List[List[TItem]] = []
         self._offset = 0
         self._len = 0
-        self._drop_set = (set()
-                          if drop_duplicate_entries
-                          else None)  # type: Optional[Set[Tuple[int, TItem]]]
+        self._drop_set: Optional[Set[Tuple[int, TItem]]] = (
+            set() if drop_duplicate_entries else None)
 
         for p, e in entries:
             self.enqueue(p, e)
@@ -161,18 +156,19 @@ class BucketPriorityQueue(Generic[TItem]):
 
         return priority, item
 
-    def __str__(self):
+    def __str__(self) -> str:
         lines = [
             '{}: {},'.format(p, e)
             for p, e in self
         ]
         return 'BucketPriorityQueue {' + _indent(lines) + '\n}'
 
-    def __repr__(self):
-        return '{}(entries={!r}, drop_duplicate_entries={!r})'.format(
-            'cirq.circuits._bucket_priority_queue.BucketPriorityQueue',
-            list(self),
-            self._drop_set is not None)
+    def __repr__(self) -> str:
+        entries = list(self)
+        drop_duplicate_entries = self._drop_set is not None
+        return ('cirq.circuits._bucket_priority_queue.BucketPriorityQueue('
+                f'entries={entries!r}, '
+                f'drop_duplicate_entries={drop_duplicate_entries})')
 
     __hash__ = None  # type: ignore
 

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Types and methods related to performing linear algebra.
 
 Focuses on methods useful for analyzing and optimizing quantum circuits.
@@ -27,13 +26,23 @@ from cirq.linalg.combinators import (
 )
 
 from cirq.linalg.decompositions import (
+    axis_angle,
+    AxisAngleDecomposition,
     deconstruct_single_qubit_matrix_into_angles,
     kak_canonicalize_vector,
     kak_decomposition,
+    kak_vector,
     KakDecomposition,
     kron_factor_4x4_to_2x2s,
     map_eigenvalues,
+    unitary_eig,
+    scatter_plot_normalized_kak_interaction_coefficients,
     so4_to_magic_su2s,
+)
+
+from cirq.linalg.states import (
+    one_hot,
+    eye_tensor,
 )
 
 from cirq.linalg.diagonalize import (
@@ -49,30 +58,36 @@ from cirq.linalg.operator_spaces import (
     kron_bases,
     matrix_from_basis_coefficients,
     PAULI_BASIS,
+    pow_pauli_combination,
 )
 
 from cirq.linalg.predicates import (
     allclose_up_to_global_phase,
-    commutes,
     is_diagonal,
     is_hermitian,
+    is_normal,
     is_orthogonal,
     is_special_orthogonal,
     is_special_unitary,
     is_unitary,
+    matrix_commutes,
     slice_for_qubits_equal_to,
 )
 
 from cirq.linalg.tolerance import (
     all_near_zero,
-    all_near_zero_mod
+    all_near_zero_mod,
 )
 
 from cirq.linalg.transformations import (
     apply_matrix_to_slices,
     match_global_phase,
     partial_trace,
+    partial_trace_of_state_vector_as_mixture,
     reflection_matrix_pow,
+    subwavefunction,
+    sub_state_vector,
     targeted_conjugate_about,
     targeted_left_multiply,
+    wavefunction_partial_trace_as_mixture,
 )

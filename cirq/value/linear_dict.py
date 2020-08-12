@@ -16,7 +16,7 @@
 
 from typing import (Any, Callable, Dict, ItemsView, Iterable, Iterator,
                     KeysView, Mapping, MutableMapping, overload, Tuple, TypeVar,
-                    Union, ValuesView)
+                    Union, ValuesView, Generic, Optional)
 
 Scalar = Union[complex, float]
 TVector = TypeVar('TVector')
@@ -24,7 +24,46 @@ TVector = TypeVar('TVector')
 TDefault = TypeVar('TDefault')
 
 
-class LinearDict(MutableMapping[TVector, Scalar]):
+def _format_coefficient(format_spec: str, coefficient: Scalar) -> str:
+    coefficient = complex(coefficient)
+    real_str = '{:{fmt}}'.format(coefficient.real, fmt=format_spec)
+    imag_str = '{:{fmt}}'.format(coefficient.imag, fmt=format_spec)
+    if float(real_str) == 0 and float(imag_str) == 0:
+        return ''
+    if float(imag_str) == 0:
+        return real_str
+    if float(real_str) == 0:
+        return imag_str + 'j'
+    if real_str[0] == '-' and imag_str[0] == '-':
+        return '-({}+{}j)'.format(real_str[1:], imag_str[1:])
+    if imag_str[0] in ['+', '-']:
+        return '({}{}j)'.format(real_str, imag_str)
+    return '({}+{}j)'.format(real_str, imag_str)
+
+
+def _format_term(format_spec: str, vector: TVector, coefficient: Scalar) -> str:
+    coefficient_str = _format_coefficient(format_spec, coefficient)
+    if not coefficient_str:
+        return coefficient_str
+    result = '{}*{!s}'.format(coefficient_str, vector)
+    if result[0] in ['+', '-']:
+        return result
+    return '+' + result
+
+
+def _format_terms(terms: Iterable[Tuple[TVector, Scalar]], format_spec: str):
+    formatted_terms = [
+        _format_term(format_spec, vector, coeff) for vector, coeff in terms
+    ]
+    s = ''.join(formatted_terms)
+    if not s:
+        return '{:{fmt}}'.format(0, fmt=format_spec)
+    if s[0] == '+':
+        return s[1:]
+    return s
+
+
+class LinearDict(Generic[TVector], MutableMapping[TVector, Scalar]):
     """Represents linear combination of things.
 
     LinearDict implements the basic linear algebraic operations of vector
@@ -39,8 +78,8 @@ class LinearDict(MutableMapping[TVector, Scalar]):
     to be linearly dependent.
     """
     def __init__(self,
-                 terms: Mapping[TVector, Scalar],
-                 validator: Callable[[TVector], bool]=lambda _: True) -> None:
+                 terms: Optional[Mapping[TVector, Scalar]] = None,
+                 validator: Callable[[TVector], bool] = None) -> None:
         """Initializes linear combination from a collection of terms.
 
         Args:
@@ -52,9 +91,11 @@ class LinearDict(MutableMapping[TVector, Scalar]):
                 combination raise ValueError exception. By default all vectors
                 are valid.
         """
-        self._is_valid = validator
-        self._terms = dict()  # type: Dict[TVector, Scalar]
-        self.update(terms)
+        self._has_validator = validator is not None
+        self._is_valid = validator or (lambda x: True)
+        self._terms: Dict[TVector, Scalar] = {}
+        if terms is not None:
+            self.update(terms)
 
     TSelf = TypeVar('TSelf', bound='LinearDict[TVector]')
 
@@ -236,52 +277,16 @@ class LinearDict(MutableMapping[TVector, Scalar]):
         all_vs = set(self.keys()) | set(other.keys())
         return all(abs(self[v] - other[v]) < atol for v in all_vs)
 
-    @staticmethod
-    def _format_coefficient(format_spec: str, coefficient: Scalar) -> str:
-        coefficient = complex(coefficient)
-        real_str = '{:{fmt}}'.format(coefficient.real, fmt=format_spec)
-        imag_str = '{:{fmt}}'.format(coefficient.imag, fmt=format_spec)
-        if float(real_str) == 0 and float(imag_str) == 0:
-            return ''
-        if float(imag_str) == 0:
-            return real_str
-        if float(real_str) == 0:
-            return imag_str + 'j'
-        if real_str[0] == '-' and imag_str[0] == '-':
-            return '-({}+{}j)'.format(real_str[1:], imag_str[1:])
-        if imag_str[0] in ['+', '-']:
-            return '({}{}j)'.format(real_str, imag_str)
-        return '({}+{}j)'.format(real_str, imag_str)
-
-    @staticmethod
-    def _format_term(format_spec: str,
-                     vector: TVector,
-                     coefficient: Scalar) -> str:
-        coefficient_str = LinearDict._format_coefficient(
-                format_spec, coefficient)
-        if not coefficient_str:
-            return coefficient_str
-        result = '{}*{!s}'.format(coefficient_str, vector)
-        if result[0] in ['+', '-']:
-            return result
-        return '+' + result
-
     def __format__(self, format_spec: str) -> str:
-        formatted_terms = [self._format_term(format_spec, v, self[v])
-                           for v in sorted(self.keys(), key=str)]
-        s = ''.join(formatted_terms)
-        if not s:
-            return '{:{fmt}}'.format(0, fmt=format_spec)
-        if s[0] == '+':
-            return s[1:]
-        return s
+        terms = [(v, self[v]) for v in sorted(self.keys(), key=str)]
+        return _format_terms(terms=terms, format_spec=format_spec)
 
     def __repr__(self) -> str:
         coefficients = dict(self)
         class_name = self.__class__.__name__
         return 'cirq.{}({!r})'.format(class_name, coefficients)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.__format__('.3f')
 
     def _repr_pretty_(self, p: Any, cycle: bool) -> None:
@@ -290,3 +295,17 @@ class LinearDict(MutableMapping[TVector, Scalar]):
             p.text('{}(...)'.format(class_name))
         else:
             p.text(str(self))
+
+    def _json_dict_(self) -> Dict[Any, Any]:
+        if self._has_validator:
+            raise ValueError(
+                'LinearDict with a validator is not json serializable.')
+        return {
+            'cirq_type': self.__class__.__name__,
+            'keys': [k for k in self._terms.keys()],
+            'values': [v for v in self._terms.values()]
+        }
+
+    @classmethod
+    def _from_json_dict_(cls, keys, values, **kwargs):
+        return cls(terms=dict(zip(keys, values)))

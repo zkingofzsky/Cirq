@@ -11,13 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import TYPE_CHECKING
 
 from cirq import circuits, ops
 from cirq.contrib.qcircuit.qcircuit_diagram_info import (
     escape_text_for_latex, get_qcircuit_diagram_info)
 
+if TYPE_CHECKING:
+    import cirq
 
-def qcircuit_qubit_namer(qubit: ops.Qid) -> str:
+
+def qcircuit_qubit_namer(qubit: 'cirq.Qid') -> str:
     """Returns the latex code for a QCircuit label of given qubit.
 
         Args:
@@ -46,12 +50,12 @@ def _render(diagram: circuits.TextDiagramDrawer) -> str:
         for x in range(max(0, w - 1)):
             key = (x, y)
             diagram_text = diagram.entries.get(key)
-            v = '&' + (diagram_text.text if diagram_text else  '') + ' '
-            diagram2.write(2*x + 1, y, v)
+            v = '&' + (diagram_text.text if diagram_text else '') + ' '
+            diagram2.write(2 * x + 1, y, v)
             post1 = r'\qw' if key in qw else ''
             post2 = r'\qwx' if key in qwx else ''
-            diagram2.write(2*x + 2, y, post1 + post2)
-        diagram2.write(2*w - 1, y, r'&\qw\\')
+            diagram2.write(2 * x + 2, y, post1 + post2)
+        diagram2.write(2 * w - 1, y, r'&\qw\\')
     grid = diagram2.render(horizontal_spacing=0, vertical_spacing=0)
 
     output = '\\Qcircuit @R=1em @C=0.75em {\n \\\\\n' + grid + '\n \\\\\n}'
@@ -74,5 +78,6 @@ def circuit_to_latex_using_qcircuit(
     diagram = circuit.to_text_diagram_drawer(
         qubit_namer=qcircuit_qubit_namer,
         qubit_order=qubit_order,
-        get_circuit_diagram_info=get_qcircuit_diagram_info)
+        get_circuit_diagram_info=get_qcircuit_diagram_info,
+        draw_moment_groups=False)
     return _render(diagram)

@@ -23,7 +23,6 @@ from cirq.google.line.placement.chip import chip_as_adjacency_list
 from cirq.google.line.placement.sequence import GridQubitLineTuple
 
 if TYPE_CHECKING:
-    # pylint: disable=unused-import
     from cirq.google.line.placement.sequence import LineSequence
     import cirq.google
 
@@ -35,8 +34,7 @@ class GreedySequenceSearch:
     method.
     """
 
-    def __init__(self,
-                 device: 'cirq.google.XmonDevice',
+    def __init__(self, device: 'cirq.google.XmonDevice',
                  start: GridQubit) -> None:
         """Greedy sequence search constructor.
 
@@ -176,8 +174,10 @@ class GreedySequenceSearch:
             return path
 
         other = {p: q, q: p}
-        parents = {p: dict(), q: dict()} \
-            # type: Dict[GridQubit, Dict[GridQubit, GridQubit]]
+        parents = {
+            p: dict(),
+            q: dict()
+        }  # type: Dict[GridQubit, Dict[GridQubit, GridQubit]]
         visited = {p: set(), q: set()}  # type: Dict[GridQubit, Set[GridQubit]]
 
         queue = collections.deque([(p, p), (q, q)])
@@ -194,7 +194,7 @@ class GreedySequenceSearch:
                     if s == q:
                         path.reverse()
                     return path
-                elif n_adj not in used and n_adj not in visited[s]:
+                if n_adj not in used and n_adj not in visited[s]:
                     # Append n_adj to the end of queue of qubit s.
                     queue.append((n_adj, s))
                     visited[s].add(n_adj)

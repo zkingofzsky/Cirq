@@ -20,7 +20,7 @@ from typing import Any, Sequence, Tuple, TypeVar, Union
 import numpy as np
 from typing_extensions import Protocol
 
-from cirq.protocols.mixture import has_mixture_channel
+from cirq.protocols.mixture_protocol import has_mixture
 
 
 from cirq.type_workarounds import NotImplementedType
@@ -129,13 +129,13 @@ def channel(val: Any,
     mixture_getter = getattr(val, '_mixture_', None)
     mixture_result = (
         NotImplemented if mixture_getter is None else mixture_getter())
-    if mixture_result is not NotImplemented:
+    if mixture_result is not NotImplemented and mixture_result is not None:
         return tuple(np.sqrt(p) * u for p, u in mixture_result)
 
     unitary_getter = getattr(val, '_unitary_', None)
     unitary_result = (
         NotImplemented if unitary_getter is None else unitary_getter())
-    if unitary_result is not NotImplemented:
+    if unitary_result is not NotImplemented and unitary_result is not None:
         return (unitary_result,)
 
     if default is not RaiseTypeErrorIfNotProvided:
@@ -169,7 +169,7 @@ def has_channel(val: Any) -> bool:
     if result is not NotImplemented:
         return result
 
-    result = has_mixture_channel(val)
+    result = has_mixture(val)
     if result is not NotImplemented and result:
         return result
 

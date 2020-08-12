@@ -14,14 +14,16 @@
 
 import itertools
 import collections
-from datetime import timedelta
-from typing import Iterable, cast, DefaultDict, Union
+from typing import Any, Iterable, cast, DefaultDict, TYPE_CHECKING, FrozenSet
 from numpy import sqrt
 from cirq import devices, ops, circuits, value
 from cirq.devices.grid_qubit import GridQubit
 from cirq.ops import MeasurementGate, raw_types
 from cirq.value import Duration
 from cirq.neutral_atoms import convert_to_neutral_atom_gates
+
+if TYPE_CHECKING:
+    import cirq
 
 
 @value.value_equality
@@ -30,10 +32,9 @@ class NeutralAtomDevice(devices.Device):
     A device with qubits placed on a grid.
     """
 
-    def __init__(self, measurement_duration: Union[Duration, timedelta],
-                 gate_duration: Union[Duration, timedelta],
-                 control_radius: float, max_parallel_z: int,
-                 max_parallel_xy: int, max_parallel_c: int,
+    def __init__(self, measurement_duration: 'cirq.DURATION_LIKE',
+                 gate_duration: 'cirq.DURATION_LIKE', control_radius: float,
+                 max_parallel_z: int, max_parallel_xy: int, max_parallel_c: int,
                  qubits: Iterable[GridQubit]) -> None:
         """
         Initializes the description of the AQuA device.
@@ -58,8 +59,8 @@ class NeutralAtomDevice(devices.Device):
             ValueError: if the wrong qubit type is provided or if invalid
                 parallel parameters are provided
         """
-        self._measurement_duration = Duration.create(measurement_duration)
-        self._gate_duration = Duration.create(gate_duration)
+        self._measurement_duration = Duration(measurement_duration)
+        self._gate_duration = Duration(gate_duration)
         self._control_radius = control_radius
         self._max_parallel_z = max_parallel_z
         self._max_parallel_xy = max_parallel_xy
@@ -71,6 +72,9 @@ class NeutralAtomDevice(devices.Device):
             if not isinstance(q, GridQubit):
                 raise ValueError('Unsupported qubit type: {!r}'.format(q))
         self.qubits = frozenset(qubits)
+
+    def qubit_set(self) -> FrozenSet['cirq.GridQubit']:
+        return self.qubits
 
     def qubit_list(self):
         return [qubit for qubit in self.qubits]
@@ -210,7 +214,7 @@ class NeutralAtomDevice(devices.Device):
                         )
         }
 
-        categorized_ops = collections.defaultdict(list) #type: DefaultDict
+        categorized_ops: DefaultDict = collections.defaultdict(list)
         for op in moment.operations:
             assert isinstance(op,
                               (ops.GateOperation, ops.ParallelGateOperation))
@@ -309,63 +313,10 @@ class NeutralAtomDevice(devices.Device):
                 if len(moment.operations) > 0:
                     raise ValueError("Non-empty moment after measurement")
             for operation in moment.operations:
-                if ops.op_gate_of_type(operation, ops.MeasurementGate):
+                if isinstance(operation.gate, ops.MeasurementGate):
                     has_measurement_occurred = True
 
-    def validate_scheduled_operation(self, schedule, scheduled_operation):
-        """
-        Raises an error if the given scheduled_operation is isn't valid in the
-        device. Also raises an error if the operations that overlap with the
-        given operation would form an invalid moment on the device.
-
-        Args:
-            schedule: The schedule the scheduled operation is part of
-            scheduled_operation: The operation to validate
-
-        Raises:
-            ValueError: If the scheduled operation is invalid in the schedule
-        """
-
-        super().validate_scheduled_operation(schedule, scheduled_operation)
-
-        # The duration of the scheduled operation cannot be shorter than the
-        # hardware duration
-        if scheduled_operation.duration < self.duration_of(
-                scheduled_operation.operation):
-            raise ValueError("Incompatible operation duration")
-
-        simul_ops_tree = [so.operation for so in
-                          schedule.operations_happening_at_same_time_as(
-                           scheduled_operation)]
-        self.validate_moment(ops.Moment(simul_ops_tree))
-
-    def validate_schedule(self, schedule):
-        """
-        Raises an error if the given schedule is invalid on this device.
-
-        Args:
-            schedule: The schedule to validate
-
-        Raises:
-            ValueError: If the schedule is invalid
-        """
-        super().validate_schedule(schedule)
-        # Validate each scheduled operation in the schedule
-        # If operation is a measurement, ensure only measurements come after it
-        measurement_check_performed = False
-        for so in schedule.scheduled_operations:
-            self.validate_scheduled_operation(schedule, so)
-            if (ops.op_gate_of_type(so.operation, ops.MeasurementGate) and not
-                    measurement_check_performed):
-                later_ops = [op for op in schedule.scheduled_operations if
-                             op.time + op.duration > so.time + so.duration]
-                for op in later_ops:
-                    if not ops.op_gate_of_type(op, ops.MeasurementGate):
-                        raise ValueError("Non-measurement operation after"
-                                         " measurement")
-                measurement_check_performed = True
-
-    def _value_equality_values_(self):
+    def _value_equality_values_(self) -> Any:
         return (self._measurement_duration,
                 self._gate_duration,
                 self._max_parallel_z,
@@ -374,22 +325,18 @@ class NeutralAtomDevice(devices.Device):
                 self._control_radius,
                 self.qubits)
 
-    def __repr__(self):
-        return ('cirq.NeutralAtomDevice(measurement_duration={!r}, '
-                'gate_duration={!r}, '
-                'max_parallel_z={!r}, '
-                'max_parallel_xy={!r}, '
-                'max_parallel_c={!r}, '
-                'control_radius={!r}, '
-                'qubits={!r})').format(self._measurement_duration,
-                                       self._gate_duration,
-                                       self._max_parallel_z,
-                                       self._max_parallel_xy,
-                                       self._max_parallel_c,
-                                       self._control_radius,
-                                       sorted(self.qubits))
+    def __repr__(self) -> str:
+        return ('cirq.NeutralAtomDevice('
+                f'measurement_duration={self._measurement_duration!r}, '
+                f'gate_duration={self._gate_duration!r}, '
+                f'max_parallel_z={self._max_parallel_z!r}, '
+                f'max_parallel_xy={self._max_parallel_xy!r}, '
+                f'max_parallel_c={self._max_parallel_c!r}, '
+                f'control_radius={self._control_radius!r}, '
+                f'qubits={sorted(self.qubits)!r})')
 
-    def neighbors_of(self, qubit: GridQubit):
+    def neighbors_of(self,
+                     qubit: 'cirq.GridQubit') -> Iterable['cirq.GridQubit']:
         """Returns the qubits that the given qubit can interact with."""
         possibles = [
             GridQubit(qubit.row + 1, qubit.col),
@@ -399,12 +346,12 @@ class NeutralAtomDevice(devices.Device):
         ]
         return [e for e in possibles if e in self.qubits]
 
-    def distance(self, p: raw_types.Qid, q: raw_types.Qid) -> float:
+    def distance(self, p: 'cirq.Qid', q: 'cirq.Qid') -> float:
         p = cast(GridQubit, p)
         q = cast(GridQubit, q)
         return sqrt((p.row - q.row) ** 2 + (p.col - q.col) ** 2)
 
-    def __str__(self):
+    def __str__(self) -> str:
         diagram = circuits.TextDiagramDrawer()
 
         for q in self.qubits:

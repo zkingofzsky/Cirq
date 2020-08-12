@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import fractions
-from typing import Tuple, Union, List, Optional, cast, TypeVar, NamedTuple, \
-    Iterable
+from typing import (Any, cast, Dict, Iterable, List, NamedTuple, Optional,
+                    Tuple, TypeVar, Union)
 
 import abc
 
@@ -60,9 +60,11 @@ class EigenGate(raw_types.Gate):
     method.
     """
 
-    def __init__(self, *,  # Forces keyword args.
-                 exponent: Union[sympy.Basic, float] = 1.0,
-                 global_shift: float = 0.0) -> None:
+    def __init__(
+            self,
+            *,  # Forces keyword args.
+            exponent: value.TParamVal = 1.0,
+            global_shift: float = 0.0) -> None:
         """Initializes the parameters used to compute the gate's matrix.
 
         The eigenvalue of each eigenspace of a gate is computed by
@@ -97,20 +99,29 @@ class EigenGate(raw_types.Gate):
                     exp(i * pi * global_shift * exponent)
 
                 For example, `cirq.X**t` uses a `global_shift` of 0 but
-                `cirq.Rx(t)` uses a `global_shift` of -0.5, which is why
-                `cirq.unitary(cirq.Rx(pi))` equals -iX instead of X.
+                `cirq.rx(t)` uses a `global_shift` of -0.5, which is why
+                `cirq.unitary(cirq.rx(pi))` equals -iX instead of X.
         """
+        if isinstance(exponent, complex):
+            if exponent.imag:
+                raise ValueError(
+                    "Gate exponent must be real. Invalid Value: {}".format(
+                        exponent))
+            exponent = exponent.real
         self._exponent = exponent
         self._global_shift = global_shift
         self._canonical_exponent_cached = None
 
     @property
-    def exponent(self) -> Union[sympy.Basic, float]:
+    def exponent(self) -> value.TParamVal:
         return self._exponent
 
+    @property
+    def global_shift(self) -> float:
+        return self._global_shift
+
     # virtual method
-    def _with_exponent(self: TSelf,
-                       exponent: Union[sympy.Basic, float]) -> TSelf:
+    def _with_exponent(self: TSelf, exponent: value.TParamVal) -> 'EigenGate':
         """Return the same kind of gate, but with a different exponent.
 
         Child classes should override this method if they have an __init__
@@ -125,7 +136,7 @@ class EigenGate(raw_types.Gate):
         # pylint: enable=unexpected-keyword-arg
 
     def _diagram_exponent(self,
-                          args: protocols.CircuitDiagramInfoArgs,
+                          args: 'protocols.CircuitDiagramInfoArgs',
                           *,
                           ignore_global_phase: bool = True):
         """The exponent to use in circuit diagrams.
@@ -179,6 +190,25 @@ class EigenGate(raw_types.Gate):
             result = h - result
 
         return result
+
+    def _format_exponent_as_angle(
+            self,
+            args: 'protocols.CircuitDiagramInfoArgs',
+            order: int = 2,
+    ) -> str:
+        """Returns string with exponent expressed as angle in radians.
+
+        Args:
+            args: CircuitDiagramInfoArgs describing the desired drawing style.
+            order: Exponent corresponding to full rotation by 2π.
+
+        Returns:
+            Angle in radians corresponding to the exponent of self and
+            formatted according to style described by args.
+        """
+        exponent = self._diagram_exponent(args, ignore_global_phase=False)
+        pi = sympy.pi if protocols.is_parameterized(exponent) else np.pi
+        return args.format_radians(radians=2 * pi * exponent / order)
 
     # virtual method
     def _eigen_shifts(self) -> List[float]:
@@ -263,7 +293,8 @@ class EigenGate(raw_types.Gate):
         real_periods = [abs(2/e) for e in exponents if e != 0]
         return _approximate_common_period(real_periods)
 
-    def __pow__(self: TSelf, exponent: Union[float, sympy.Symbol]) -> TSelf:
+    def __pow__(self: TSelf,
+                exponent: Union[float, sympy.Symbol]) -> 'EigenGate':
         new_exponent = protocols.mul(self._exponent, exponent, NotImplemented)
         if new_exponent is NotImplemented:
             return NotImplemented
@@ -290,14 +321,11 @@ class EigenGate(raw_types.Gate):
             exponent = value.PeriodicValue(self._exponent, period)
         return exponent, self._global_shift
 
-    def _trace_distance_bound_(self):
+    def _trace_distance_bound_(self) -> Optional[float]:
         if protocols.is_parameterized(self._exponent):
-            return 1
-
-        angles = [half_turns for half_turns, _ in self._eigen_components()]
-        min_angle = min(angles)
-        max_angle = max(angles)
-        return abs((max_angle - min_angle) * self._exponent * 3.5)
+            return None
+        angles = np.pi * (np.array(self._eigen_shifts()) * self._exponent % 2)
+        return protocols.trace_distance_from_angle_list(angles)
 
     def _has_unitary_(self) -> bool:
         return not self._is_parameterized_()
@@ -315,9 +343,38 @@ class EigenGate(raw_types.Gate):
     def _is_parameterized_(self) -> bool:
         return protocols.is_parameterized(self._exponent)
 
-    def _resolve_parameters_(self: TSelf, param_resolver) -> TSelf:
+    def _resolve_parameters_(self: TSelf, param_resolver) -> 'EigenGate':
         return self._with_exponent(
                 exponent=param_resolver.value_of(self._exponent))
+
+    def _equal_up_to_global_phase_(self, other, atol):
+        if not isinstance(other, EigenGate):
+            return NotImplemented
+
+        exponents = (self.exponent, other.exponent)
+        exponents_is_parameterized = tuple(
+            protocols.is_parameterized(e) for e in exponents)
+        if (all(exponents_is_parameterized) and exponents[0] != exponents[1]):
+            return False
+        if any(exponents_is_parameterized):
+            return False
+        self_without_phase = self._with_exponent(self.exponent)
+        self_without_phase._global_shift = 0
+        self_without_exp_or_phase = self_without_phase._with_exponent(0)
+        other_without_phase = other._with_exponent(other.exponent)
+        other_without_phase._global_shift = 0
+        other_without_exp_or_phase = other_without_phase._with_exponent(0)
+        if not protocols.approx_eq(self_without_exp_or_phase,
+                                   other_without_exp_or_phase,
+                                   atol=atol):
+            return False
+
+        period = self_without_phase._period()
+        canonical_diff = (exponents[0] - exponents[1]) % period
+        return np.isclose(canonical_diff, 0, atol=atol)
+
+    def _json_dict_(self) -> Dict[str, Any]:
+        return protocols.obj_to_dict_helper(self, ['exponent', 'global_shift'])
 
 
 def _lcm(vals: Iterable[int]) -> int:

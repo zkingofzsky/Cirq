@@ -23,6 +23,7 @@ IGNORED_FILE_PATTERNS = [
     r'^dev_tools/.+',  # Environment-heavy code.
     r'^.+_pb2(_grpc)?\.py$',  # Auto-generated protobuf code.
     r'^setup\.py$',  # Installation code.
+    r'^cirq/google/engine/client/.+.py$',  # Generate gRPC client code.
 ]
 IGNORED_LINE_PATTERNS = [
     # Imports often uncovered due to version checks and type checking blocks.
@@ -36,11 +37,15 @@ IGNORED_LINE_PATTERNS = [
     # Empty method definitions.
     r'^pass$',
     # Code explicitly marked as not implemented.
-    r'raise NotImplementedError\(.+',
+    r'raise NotImplementedError.*',
     # Code explicitly marked as unreachable.
-    r'^assert False.+$',
+    r'^assert False.*$',
     # Code testing if libraries are present.
     r'except ImportError',
+    # Plotting code.
+    r'plt\.show\(\)',
+    r'fig(ure)?\.show\(\)',
+    r'=\s*plt.subplots?\(',
 ]
 EXPLICIT_OPT_OUT_COMMENT = '#coverage:ignore'
 
@@ -180,6 +185,7 @@ def line_content_counts_as_uncovered_manual(content: str) -> bool:
             return False
 
     # TODO: multiline comments, multiline strings, etc, etc.
+    # Github issue: https://github.com/quantumlib/Cirq/issues/2968
     return True
 
 
@@ -211,6 +217,7 @@ def determine_ignored_lines(content: str) -> Set[int]:
 
 def naive_find_end_of_scope(lines: List[str], i: int) -> int:
     # TODO: deal with line continuations, which may be less indented.
+    # Github issue: https://github.com/quantumlib/Cirq/issues/2968
     line = lines[i]
     indent = line[:len(line) - len(line.lstrip())]
     while i < len(lines) and (not lines[i].strip() or
@@ -244,6 +251,7 @@ def line_counts_as_uncovered(line: str,
 
     # Ignore end-of-line comments.
     # TODO: avoid # in strings, etc.
+    # Github issue: https://github.com/quantumlib/Cirq/issues/2968
     if '#' in content:
         content = content[:content.index('#')].strip()
 

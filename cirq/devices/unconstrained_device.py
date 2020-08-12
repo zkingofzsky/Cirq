@@ -12,30 +12,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from cirq.devices.device import Device
-from cirq.value import Duration
+from typing import Any, Dict, TYPE_CHECKING
+
+from cirq import value, protocols
+from cirq._doc import document
+from cirq.devices import device
+
+if TYPE_CHECKING:
+    import cirq
 
 
-class _UnconstrainedDeviceType(Device):
-    """A device that allows everything."""
+@value.value_equality()
+class _UnconstrainedDevice(device.Device):
+    """A device that allows everything, infinitely fast."""
 
-    def duration_of(self, operation):
-        return Duration(picos=0)
+    def qubit_set(self) -> None:
+        return None
 
-    def validate_operation(self, operation):
+    def duration_of(self, operation: 'cirq.Operation') -> 'cirq.Duration':
+        return value.Duration(picos=0)
+
+    def validate_moment(self, moment) -> None:
         pass
 
-    def validate_scheduled_operation(self, schedule, scheduled_operation):
+    def validate_circuit(self, circuit) -> None:
         pass
 
-    def validate_circuit(self, circuit):
-        pass
+    def __repr__(self) -> str:
+        return 'cirq.UNCONSTRAINED_DEVICE'
 
-    def validate_schedule(self, schedule):
-        pass
+    def _value_equality_values_(self) -> Any:
+        return ()
 
-    def __repr__(self):
-        return 'cirq.UnconstrainedDevice'  # coverage: ignore
+    def _json_dict_(self) -> Dict[str, Any]:
+        return protocols.obj_to_dict_helper(self, [])
 
 
-UnconstrainedDevice = _UnconstrainedDeviceType()
+UNCONSTRAINED_DEVICE: device.Device = _UnconstrainedDevice()
+document(UNCONSTRAINED_DEVICE,
+         """A device with no constraints on operations or qubits.""")

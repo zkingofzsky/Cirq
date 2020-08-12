@@ -14,12 +14,16 @@
 
 """An optimization pass that combines adjacent single-qubit rotations."""
 
-from typing import Callable, List, Optional, Sequence, Tuple, cast
+from typing import Callable, List, Optional, Sequence, Tuple, cast, \
+    TYPE_CHECKING
 
 import numpy as np
 
 from cirq import circuits, ops, protocols
 from cirq.optimizers import two_qubit_decompositions
+
+if TYPE_CHECKING:
+    import cirq
 
 
 class MergeInteractions(circuits.PointOptimizer):
@@ -53,7 +57,7 @@ class MergeInteractions(circuits.PointOptimizer):
         switch_to_new = False
         switch_to_new |= any(
             len(old_op.qubits) == 2 and
-            not ops.op_gate_of_type(old_op, ops.CZPowGate)
+            not isinstance(old_op.gate, ops.CZPowGate)
             for old_op in old_operations)
         if not self.allow_partial_czs:
             switch_to_new |= any(isinstance(old_op, ops.GateOperation) and
@@ -87,10 +91,8 @@ class MergeInteractions(circuits.PointOptimizer):
             clear_qubits=op.qubits,
             new_operations=new_operations)
 
-    def _op_to_matrix(self,
-                      op: Optional[ops.Operation],
-                      qubits: Tuple[ops.Qid, ...]
-                      ) -> Optional[np.ndarray]:
+    def _op_to_matrix(self, op: ops.Operation,
+                      qubits: Tuple['cirq.Qid', ...]) -> Optional[np.ndarray]:
         """Determines the effect of an operation on the given qubits.
 
         If the operation is a 1-qubit operation on one of the given qubits,
@@ -106,6 +108,9 @@ class MergeInteractions(circuits.PointOptimizer):
         Returns:
             None, or else a matrix equivalent to the effect of the operation.
         """
+        if any(q not in qubits for q in op.qubits):
+            return None
+
         q1, q2 = qubits
 
         matrix = protocols.unitary(op, None)
@@ -125,10 +130,8 @@ class MergeInteractions(circuits.PointOptimizer):
         return None
 
     def _scan_two_qubit_ops_into_matrix(
-            self,
-            circuit: circuits.Circuit,
-            index: Optional[int],
-            qubits: Tuple[ops.Qid, ...]
+            self, circuit: circuits.Circuit, index: Optional[int],
+            qubits: Tuple['cirq.Qid', ...]
     ) -> Tuple[List[ops.Operation], List[int], np.ndarray]:
         """Accumulates operations affecting the given pair of qubits.
 

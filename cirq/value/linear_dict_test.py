@@ -18,6 +18,12 @@ import pytest
 import cirq
 
 
+def test_empty_init():
+    v = cirq.LinearDict()
+    assert v == cirq.LinearDict({})
+    assert not v
+
+
 @pytest.mark.parametrize('keys, coefficient, terms_expected', (
     ((), 10, {}),
     (('X',), 2, {'X': 2}),
@@ -497,3 +503,8 @@ def test_repr_pretty(terms):
     printer.reset()
     linear_dict._repr_pretty_(printer, True)
     assert printer.buffer == 'LinearDict(...)'
+
+
+def test_json_fails_with_validator():
+    with pytest.raises(ValueError, match='not json serializable'):
+        _ = cirq.to_json(cirq.LinearDict({}, validator=lambda: True))

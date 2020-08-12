@@ -23,7 +23,7 @@ applies more generally to fermions, thus the name of the gate.
 
 import cmath
 import math
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -51,33 +51,66 @@ class FSimGate(gate_features.TwoQubitGate,
     where:
 
         a = cos(theta)
-        b = i·sin(theta)
-        c = exp(i·phi)
+        b = -i·sin(theta)
+        c = exp(-i·phi)
+
+    Note the difference in sign conventions between FSimGate and the
+    ISWAP and CZPowGate:
+
+        FSimGate(θ, φ) = ISWAP**(-2θ/π) CZPowGate(exponent=-φ/π)
     """
 
-    def __init__(self, theta: float, phi: float):
+    def __init__(self, theta: float, phi: float) -> None:
+        """
+        Args:
+            theta: Swap angle on the ``|01⟩`` ``|10⟩`` subspace, in radians.
+                Determined by the strength and duration of the XX+YY
+                interaction. Note: uses opposite sign convention to the
+                iSWAP gate. Maximum strength (full iswap) is at pi/2.
+            phi: Controlled phase angle, in radians. Determines how much the
+                ``|11⟩`` state is phased. Note: uses opposite sign convention to
+                the CZPowGate. Maximum strength (full cz) is at pi/2.
+        """
         self.theta = theta
         self.phi = phi
 
-    def _value_equality_values_(self):
+    def _value_equality_values_(self) -> Any:
         return self.theta, self.phi
 
-    def _is_parameterized_(self):
+    def _is_parameterized_(self) -> bool:
         return cirq.is_parameterized(self.theta) or cirq.is_parameterized(
             self.phi)
 
+    def _has_unitary_(self):
+        return not self._is_parameterized_()
+
     def _unitary_(self) -> Optional[np.ndarray]:
-        if cirq.is_parameterized(self):
+        if self._is_parameterized_():
             return None
         a = math.cos(self.theta)
-        b = 1j * math.sin(self.theta)
-        c = cmath.exp(1j * self.phi)
+        b = -1j * math.sin(self.theta)
+        c = cmath.exp(-1j * self.phi)
         return np.array([
             [1, 0, 0, 0],
             [0, a, b, 0],
             [0, b, a, 0],
             [0, 0, 0, c],
         ])
+
+    def _pauli_expansion_(self) -> value.LinearDict[str]:
+        if protocols.is_parameterized(self):
+            return NotImplemented
+        a = math.cos(self.theta)
+        b = -1j * math.sin(self.theta)
+        c = cmath.exp(-1j * self.phi)
+        return value.LinearDict({
+            'II': (1 + c) / 4 + a / 2,
+            'IZ': (1 - c) / 4,
+            'ZI': (1 - c) / 4,
+            'ZZ': (1 + c) / 4 - a / 2,
+            'XX': b / 2,
+            'YY': b / 2,
+        })
 
     def _resolve_parameters_(self, param_resolver: 'cirq.ParamResolver'
                             ) -> 'cirq.FSimGate':
@@ -90,7 +123,7 @@ class FSimGate(gate_features.TwoQubitGate,
         if cirq.is_parameterized(self):
             return None
         if self.theta != 0:
-            inner_matrix = protocols.unitary(cirq.Rx(-2 * self.theta))
+            inner_matrix = protocols.unitary(cirq.rx(2 * self.theta))
             oi = args.subspace_index(0b01)
             io = args.subspace_index(0b10)
             out = cirq.apply_matrix_to_slices(args.target_tensor,
@@ -101,41 +134,30 @@ class FSimGate(gate_features.TwoQubitGate,
             out = args.target_tensor
         if self.phi != 0:
             ii = args.subspace_index(0b11)
-            out[ii] *= cmath.exp(1j * self.phi)
+            out[ii] *= cmath.exp(-1j * self.phi)
         return out
 
     def _decompose_(self, qubits) -> 'cirq.OP_TREE':
         a, b = qubits
-        xx = cirq.XXPowGate(exponent=-self.theta / np.pi, global_shift=-0.5)
-        yy = cirq.YYPowGate(exponent=-self.theta / np.pi, global_shift=-0.5)
+        xx = cirq.XXPowGate(exponent=self.theta / np.pi, global_shift=-0.5)
+        yy = cirq.YYPowGate(exponent=self.theta / np.pi, global_shift=-0.5)
         yield xx(a, b)
         yield yy(a, b)
-        yield cirq.CZ(a, b)**(self.phi / np.pi)
+        yield cirq.CZ(a, b)**(-self.phi / np.pi)
 
-    def _circuit_diagram_info_(self, args: 'cirq.CircuitDiagramInfoArgs'):
-        t = _format_rads(args, self.theta)
-        p = _format_rads(args, self.phi)
-        return 'fsim({}, {})'.format(t, p), '#2'
+    def _circuit_diagram_info_(self, args: 'cirq.CircuitDiagramInfoArgs'
+                              ) -> Tuple[str, ...]:
+        t = args.format_radians(self.theta)
+        p = args.format_radians(self.phi)
+        return f'FSim({t}, {p})', f'FSim({t}, {p})'
 
-    def __pow__(self, power):
+    def __pow__(self, power) -> 'FSimGate':
         return FSimGate(cirq.mul(self.theta, power), cirq.mul(self.phi, power))
 
-    def __repr__(self):
-        return 'cirq.FSimGate(theta={}, phi={})'.format(proper_repr(self.theta),
-                                                        proper_repr(self.phi))
+    def __repr__(self) -> str:
+        t = proper_repr(self.theta)
+        p = proper_repr(self.phi)
+        return f'cirq.FSimGate(theta={t}, phi={p})'
 
-
-def _format_rads(args: 'cirq.CircuitDiagramInfoArgs', radians: float) -> str:
-    if cirq.is_parameterized(radians):
-        return str(radians)
-    unit = 'π' if args.use_unicode_characters else 'pi'
-    if radians == np.pi:
-        return unit
-    if radians == 0:
-        return '0'
-    if radians == -np.pi:
-        return '-' + unit
-    if args.precision is not None:
-        quantity = '{{:.{}}}'.format(args.precision).format(radians / np.pi)
-        return quantity + unit
-    return repr(radians)
+    def _json_dict_(self) -> Dict[str, Any]:
+        return protocols.obj_to_dict_helper(self, ['theta', 'phi'])

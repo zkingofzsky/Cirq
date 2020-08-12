@@ -14,15 +14,21 @@
 
 """Utilities for testing code."""
 
+from cirq.testing.asynchronous import (
+    asyncio_pending,)
+
 from cirq.testing.circuit_compare import (
     assert_circuits_with_terminal_measurements_are_equivalent,
-    assert_eigen_gate_has_consistent_apply_unitary,
     assert_has_consistent_apply_unitary,
     assert_has_consistent_apply_unitary_for_various_exponents,
     assert_has_diagram,
     assert_same_circuits,
     highlight_text_differences,
+    assert_has_consistent_qid_shape,
 )
+
+from cirq.testing.consistent_act_on import (
+    assert_act_on_clifford_tableau_effect_matches_unitary,)
 
 from cirq.testing.consistent_phase_by import (
     assert_phase_by_is_consistent_with_unitary,)
@@ -35,11 +41,16 @@ from cirq.testing.consistent_pauli_expansion import (
 
 from cirq.testing.consistent_protocols import (
     assert_eigengate_implements_consistent_protocols,
+    assert_has_consistent_trace_distance_bound,
     assert_implements_consistent_protocols,
+    assert_commutes_magic_method_consistent_with_unitaries,
 )
 
 from cirq.testing.consistent_qasm import (
     assert_qasm_is_consistent_with_unitary,)
+
+from cirq.testing.consistent_specified_has_unitary import (
+    assert_specifies_has_unitary_if_unitary,)
 
 from cirq.testing.equals_tester import (
     EqualsTester,)
@@ -47,13 +58,12 @@ from cirq.testing.equals_tester import (
 from cirq.testing.equivalent_repr_eval import (
     assert_equivalent_repr,)
 
-from cirq.testing.file_tester import (
-    TempDirectoryPath,
-    TempFilePath,
-)
+from cirq.testing.json import (
+    assert_json_roundtrip_works,)
 
 from cirq.testing.lin_alg_utils import (
     assert_allclose_up_to_global_phase,
+    random_density_matrix,
     random_orthogonal,
     random_special_orthogonal,
     random_special_unitary,
@@ -61,11 +71,16 @@ from cirq.testing.lin_alg_utils import (
     random_unitary,
 )
 
+from cirq.testing.logs import (
+    assert_logs,)
+
 from cirq.testing.order_tester import (
     OrderTester,)
 
 from cirq.testing.random_circuit import (
-    random_circuit,)
+    DEFAULT_GATE_DOMAIN,
+    random_circuit,
+)
 
 from cirq.testing.sample_circuits import (
     nonoptimal_toffoli_circuit,)

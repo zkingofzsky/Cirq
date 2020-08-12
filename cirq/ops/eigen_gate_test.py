@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+import re
 
 import numpy as np
+import pytest
 import sympy
 
 import cirq
+from cirq import value
+from cirq.testing import assert_has_consistent_trace_distance_bound
+
 
 
 class CExpZinGate(cirq.EigenGate, cirq.TwoQubitGate):
@@ -27,7 +31,8 @@ class CExpZinGate(cirq.EigenGate, cirq.TwoQubitGate):
         [0  0  i  0]
         [0  0  0 -i]
     """
-    def __init__(self, quarter_turns: Union[sympy.Basic, float]) -> None:
+
+    def __init__(self, quarter_turns: value.TParamVal) -> None:
         super().__init__(exponent=quarter_turns)
 
     @property
@@ -85,6 +90,9 @@ def test_init():
     assert CExpZinGate(sympy.Symbol('a')).exponent == sympy.Symbol('a')
 
     assert ZGateDef(exponent=0.5).exponent == 0.5
+    with pytest.raises(ValueError, match="real"):
+        assert ZGateDef(exponent=0.5j)
+    assert (ZGateDef(exponent=0.5 + 0j).exponent == 0.5)
 
 
 def test_eq():
@@ -126,22 +134,24 @@ def test_approx_eq():
         ZGateDef(exponent=1.5),
         atol=0.1
     )
-    assert not cirq.approx_eq(
-        ZGateDef(exponent=1.5),
-        ZGateDef(exponent=sympy.Symbol('a')),
-        atol=0.1
-    )
-
+    with pytest.raises(TypeError,
+                       match=re.escape("unsupported operand type(s) for"
+                                       " -: 'Symbol' and 'PeriodicValue'")):
+        cirq.approx_eq(ZGateDef(exponent=1.5),
+                       ZGateDef(exponent=sympy.Symbol('a')),
+                       atol=0.1)
     assert cirq.approx_eq(
         CExpZinGate(sympy.Symbol('a')),
         CExpZinGate(sympy.Symbol('a')),
         atol=0.1
     )
-    assert not cirq.approx_eq(
-        CExpZinGate(sympy.Symbol('a')),
-        CExpZinGate(sympy.Symbol('b')),
-        atol=0.1
-    )
+    with pytest.raises(
+            AttributeError,
+            match="Insufficient information to decide whether expressions are "
+            "approximately equal .* vs .*"):
+        assert not cirq.approx_eq(CExpZinGate(sympy.Symbol('a')),
+                                  CExpZinGate(sympy.Symbol('b')),
+                                  atol=0.1)
 
 
 def test_approx_eq_periodic():
@@ -200,6 +210,9 @@ def test_pow():
                     global_shift=0.5)**2 == ZGateDef(
         exponent=0.5,
         global_shift=0.5)
+    with pytest.raises(ValueError, match="real"):
+        assert ZGateDef(exponent=0.5)**0.5j
+    assert ZGateDef(exponent=0.5)**(1 + 0j) == ZGateDef(exponent=0.5)
 
 
 def test_inverse():
@@ -210,7 +223,23 @@ def test_inverse():
 
 def test_trace_distance_bound():
     assert cirq.trace_distance_bound(CExpZinGate(0.001)) < 0.01
-    assert cirq.trace_distance_bound(CExpZinGate(sympy.Symbol('a'))) >= 1
+    assert cirq.trace_distance_bound(CExpZinGate(sympy.Symbol('a'))) == 1
+    assert cirq.approx_eq(cirq.trace_distance_bound(CExpZinGate(2)), 1)
+
+    class E(cirq.EigenGate):
+
+        def _num_qubits_(self):
+            # coverage: ignore
+            return 1
+
+        def _eigen_components(self):
+            return [
+                (0, np.array([[1, 0], [0, 0]])),
+                (12, np.array([[0, 0], [0, 1]])),
+            ]
+
+    for numerator in range(13):
+        assert_has_consistent_trace_distance_bound(E()**(numerator / 12))
 
 
 def test_extrapolate():
@@ -352,3 +381,45 @@ def test_diagram_period():
 
     # Unknown period.
     assert ShiftyGate(505.2, 0, np.pi, np.e)._diagram_exponent(args) == 505.2
+
+
+class WeightedZPowGate(cirq.EigenGate, cirq.SingleQubitGate):
+
+    def __init__(self, weight, **kwargs):
+        self.weight = weight
+        super().__init__(**kwargs)
+
+    def _value_equality_values_(self):
+        return self.weight, self._canonical_exponent, self._global_shift
+
+    _value_equality_approximate_values_ = _value_equality_values_
+
+    def _eigen_components(self):
+        return [
+            (0, np.diag([1, 0])),
+            (self.weight, np.diag([0, 1])),
+        ]
+
+    def _with_exponent(self, exponent):
+        return type(self)(self.weight,
+                          exponent=exponent,
+                          global_shift=self._global_shift)
+
+
+@pytest.mark.parametrize('gate1,gate2,eq_up_to_global_phase', [
+    (cirq.rz(0.3 * np.pi), cirq.Z**0.3, True),
+    (cirq.Z, cirq.Gate, False),
+    (cirq.rz(0.3), cirq.Z**0.3, False),
+    (cirq.ZZPowGate(global_shift=0.5), cirq.ZZ, True),
+    (cirq.ZPowGate(global_shift=0.5)**sympy.Symbol('e'), cirq.Z, False),
+    (cirq.Z**sympy.Symbol('e'), cirq.Z**sympy.Symbol('f'), False),
+    (cirq.ZZ**1.9, cirq.ZZ**-0.1, True),
+    (WeightedZPowGate(0), WeightedZPowGate(0.1), False),
+    (WeightedZPowGate(0.3), WeightedZPowGate(0.3, global_shift=0.1), True),
+    (cirq.X, cirq.Z, False),
+    (cirq.X, cirq.Y, False),
+    (cirq.rz(np.pi), cirq.Z, True),
+    (cirq.X**0.3, cirq.Z**0.3, False),
+])
+def test_equal_up_to_global_phase(gate1, gate2, eq_up_to_global_phase):
+    assert cirq.equal_up_to_global_phase(gate1, gate2) == eq_up_to_global_phase

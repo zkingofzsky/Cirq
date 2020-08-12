@@ -14,17 +14,18 @@
 
 """Basic types defining qubits, gates, and operations."""
 
-from typing import Any, Callable, Sequence, Tuple, TYPE_CHECKING, TypeVar, Union
+from typing import (Any, Callable, Collection, Dict, Hashable, Optional,
+                    Sequence, Tuple, TypeVar, TYPE_CHECKING, Union)
 
 import abc
+import functools
+import numpy as np
 
-from cirq import value
-from cirq.protocols import decompose, inverse
+from cirq import protocols, value
+from cirq.type_workarounds import NotImplementedType
 
 if TYPE_CHECKING:
-    # pylint: disable=unused-import
-    from cirq.ops import gate_operation, linear_combinations
-    # pylint: enable=unused-import
+    import cirq
 
 
 class Qid(metaclass=abc.ABCMeta):
@@ -50,8 +51,40 @@ class Qid(metaclass=abc.ABCMeta):
         comparison key.
         """
 
+    @property
+    @abc.abstractmethod
+    def dimension(self) -> int:
+        """Returns the dimension or the number of quantum levels this qid has.
+        E.g. 2 for a qubit, 3 for a qutrit, etc.
+        """
+
+    @staticmethod
+    def validate_dimension(dimension: int) -> None:
+        """Raises an exception if `dimension` is not positive.
+
+        Raises:
+            ValueError: `dimension` is not positive.
+        """
+        if dimension < 1:
+            raise ValueError(
+                'Wrong qid dimension. '
+                'Expected a positive integer but got {}.'.format(dimension))
+
+    def with_dimension(self, dimension: int) -> 'Qid':
+        """Returns a new qid with a different dimension.
+
+        Child classes can override.  Wraps the qubit object by default.
+
+        Args:
+            dimension: The new dimension or number of levels.
+        """
+        if dimension == self.dimension:
+            return self
+        return _QubitAsQid(self, dimension=dimension)
+
     def _cmp_tuple(self):
-        return type(self).__name__, repr(type(self)), self._comparison_key()
+        return (type(self).__name__, repr(type(self)), self._comparison_key(),
+                self.dimension)
 
     def __hash__(self):
         return hash((Qid, self._comparison_key()))
@@ -87,7 +120,41 @@ class Qid(metaclass=abc.ABCMeta):
         return self._cmp_tuple() >= other._cmp_tuple()
 
 
-class Gate(metaclass=abc.ABCMeta):
+@functools.total_ordering
+class _QubitAsQid(Qid):
+
+    def __init__(self, qubit: Qid, dimension: int):
+        self._qubit = qubit
+        self._dimension = dimension
+        self.validate_dimension(dimension)
+
+    @property
+    def qubit(self) -> Qid:
+        return self._qubit
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    def with_dimension(self, dimension: int) -> Qid:
+        """Returns a copy with a different dimension or number of levels."""
+        return self.qubit.with_dimension(dimension)
+
+    def _comparison_key(self) -> Any:
+        # Don't include self._qubit.dimension
+        return self._qubit._cmp_tuple()[:-1]
+
+    def __repr__(self) -> str:
+        return f'{self.qubit!r}.with_dimension({self.dimension})'
+
+    def __str__(self) -> str:
+        return f'{self.qubit!s} (d={self.dimension})'
+
+    def _json_dict_(self) -> Dict[str, Any]:
+        return protocols.obj_to_dict_helper(self, ['qubit', 'dimension'])
+
+
+class Gate(metaclass=value.ABCMetaImplementAnyOneOf):
     """An operation type that can be applied to a collection of qubits.
 
     Gates can be applied to qubits by calling their on() method with
@@ -104,37 +171,26 @@ class Gate(metaclass=abc.ABCMeta):
     multiplying them by scalars.
     """
 
-    def validate_args(self, qubits: Sequence[Qid]) -> None:
+    def validate_args(self, qubits: Sequence['cirq.Qid']) -> None:
         """Checks if this gate can be applied to the given qubits.
 
-        By default checks if input is of type Qid and qubit count.
-        Child classes can override.
+        By default checks that:
+        - inputs are of type `Qid`
+        - len(qubits) == num_qubits()
+        - qubit_i.dimension == qid_shape[i] for all qubits
+
+        Child classes can override.  The child implementation should call
+        `super().validate_args(qubits)` then do custom checks.
 
         Args:
-            qubits: The collection of qubits to potentially apply the gate to.
+            qubits: The sequence of qubits to potentially apply the gate to.
 
         Throws:
             ValueError: The gate can't be applied to the qubits.
         """
-        if len(qubits) == 0:
-            raise ValueError(
-                "Applied a gate to an empty set of qubits. Gate: {}".format(
-                    repr(self)))
+        _validate_qid_shape(self, qubits)
 
-        if len(qubits) != self.num_qubits():
-            raise ValueError(
-                'Wrong number of qubits for <{!r}>. '
-                'Expected {} qubits but got <{!r}>.'.format(
-                    self,
-                    self.num_qubits(),
-                    qubits))
-
-        if any([not isinstance(qubit, Qid)
-                for qubit in qubits]):
-            raise ValueError(
-                    'Gate was called with type different than Qid.')
-
-    def on(self, *qubits: Qid) -> 'gate_operation.GateOperation':
+    def on(self, *qubits: Qid) -> 'Operation':
         """Returns an application of this gate to the given qubits.
 
         Args:
@@ -144,44 +200,39 @@ class Gate(metaclass=abc.ABCMeta):
         from cirq.ops import gate_operation
         return gate_operation.GateOperation(self, list(qubits))
 
-    def wrap_in_linear_combination(
-            self,
-            coefficient: Union[complex, float, int]=1
-            ) -> 'linear_combinations.LinearCombinationOfGates':
+    def wrap_in_linear_combination(self,
+                                   coefficient: Union[complex, float, int] = 1
+                                  ) -> 'cirq.LinearCombinationOfGates':
         from cirq.ops import linear_combinations
         return linear_combinations.LinearCombinationOfGates({self: coefficient})
 
-    def __add__(self,
-                other: Union['Gate',
-                             'linear_combinations.LinearCombinationOfGates']
-                ) -> 'linear_combinations.LinearCombinationOfGates':
+    def __add__(self, other: Union['Gate', 'cirq.LinearCombinationOfGates']
+               ) -> 'cirq.LinearCombinationOfGates':
         if isinstance(other, Gate):
             return (self.wrap_in_linear_combination() +
                     other.wrap_in_linear_combination())
         return self.wrap_in_linear_combination() + other
 
-    def __sub__(self,
-                other: Union['Gate',
-                             'linear_combinations.LinearCombinationOfGates']
-                ) -> 'linear_combinations.LinearCombinationOfGates':
+    def __sub__(self, other: Union['Gate', 'cirq.LinearCombinationOfGates']
+               ) -> 'cirq.LinearCombinationOfGates':
         if isinstance(other, Gate):
             return (self.wrap_in_linear_combination() -
                     other.wrap_in_linear_combination())
         return self.wrap_in_linear_combination() - other
 
-    def __neg__(self) -> 'linear_combinations.LinearCombinationOfGates':
+    def __neg__(self) -> 'cirq.LinearCombinationOfGates':
         return self.wrap_in_linear_combination(coefficient=-1)
 
     def __mul__(self, other: Union[complex, float, int]
-                ) -> 'linear_combinations.LinearCombinationOfGates':
+               ) -> 'cirq.LinearCombinationOfGates':
         return self.wrap_in_linear_combination(coefficient=other)
 
     def __rmul__(self, other: Union[complex, float, int]
-                 ) -> 'linear_combinations.LinearCombinationOfGates':
+                ) -> 'cirq.LinearCombinationOfGates':
         return self.wrap_in_linear_combination(coefficient=other)
 
     def __truediv__(self, other: Union[complex, float, int]
-                    ) -> 'linear_combinations.LinearCombinationOfGates':
+                   ) -> 'cirq.LinearCombinationOfGates':
         return self.wrap_in_linear_combination(coefficient=1 / other)
 
     def __pow__(self, power):
@@ -190,16 +241,14 @@ class Gate(metaclass=abc.ABCMeta):
 
         if power == -1:
             # HACK: break cycle
-            from cirq.line import line_qubit
+            from cirq.devices import line_qubit
 
-            decomposed = decompose.decompose_once_with_qubits(
-                self,
-                qubits=line_qubit.LineQubit.range(self.num_qubits()),
-                default=None)
+            decomposed = protocols.decompose_once_with_qubits(
+                self, qubits=line_qubit.LineQid.for_gate(self), default=None)
             if decomposed is None:
                 return NotImplemented
 
-            inverse_decomposed = inverse.inverse(decomposed, None)
+            inverse_decomposed = protocols.inverse(decomposed, None)
             if inverse_decomposed is None:
                 return NotImplemented
 
@@ -210,24 +259,114 @@ class Gate(metaclass=abc.ABCMeta):
     def __call__(self, *args, **kwargs):
         return self.on(*args, **kwargs)
 
-    def controlled_by(self, *control_qubits: Qid) -> 'Gate':
-        """Returns a controlled version of this gate.
+    def with_probability(self, probability: 'cirq.TParamVal') -> 'cirq.Gate':
+        from cirq.ops.random_gate_channel import RandomGateChannel
+        if probability == 1:
+            return self
+        return RandomGateChannel(sub_gate=self, probability=probability)
 
-        Args:
-            control_qubits: Optional qubits to control the gate by.
+    def controlled(self,
+                   num_controls: int = None,
+                   control_values: Optional[Sequence[
+                       Union[int, Collection[int]]]] = None,
+                   control_qid_shape: Optional[Tuple[int, ...]] = None
+                  ) -> 'Gate':
+        """Returns a controlled version of this gate. If no arguments are
+           specified, defaults to a single qubit control.
+
+            num_controls: Total number of control qubits.
+            control_values: For which control qubit values to apply the sub
+                gate.  A sequence of length `num_controls` where each
+                entry is an integer (or set of integers) corresponding to the
+                qubit value (or set of possible values) where that control is
+                enabled.  When all controls are enabled, the sub gate is
+                applied.  If unspecified, control values default to 1.
+            control_qid_shape: The qid shape of the controls.  A tuple of the
+                expected dimension of each control qid.  Defaults to
+                `(2,) * num_controls`.  Specify this argument when using qudits.
         """
         # Avoids circular import.
         from cirq.ops import ControlledGate
-        return ControlledGate(self, control_qubits,
-                              len(control_qubits) if control_qubits is not None
-                                                  else 1)
+        if num_controls == 0:
+            return self
+        return ControlledGate(self,
+                              num_controls=num_controls,
+                              control_values=control_values,
+                              control_qid_shape=control_qid_shape)
 
-    @abc.abstractmethod
+    # num_qubits, _num_qubits_, and _qid_shape_ are implemented with alternative
+    # to keep backwards compatibility with versions of cirq where num_qubits
+    # is an abstract method.
+    def _backwards_compatibility_num_qubits(self) -> int:
+        return protocols.num_qubits(self)
+
+    def _has_stabilizer_effect_(self) -> Optional[bool]:
+        return NotImplemented
+
+    @value.alternative(requires='_num_qubits_',
+                       implementation=_backwards_compatibility_num_qubits)
     def num_qubits(self) -> int:
         """The number of qubits this gate acts on."""
-        raise NotImplementedError()
 
-TSelf_Operation = TypeVar('TSelf_Operation', bound='Operation')
+    def _num_qubits_from_shape(self) -> int:
+        shape = self._qid_shape_()
+        if shape is NotImplemented:
+            return NotImplemented
+        return len(shape)
+
+    def _num_qubits_proto_from_num_qubits(self) -> int:
+        return self.num_qubits()
+
+    @value.alternative(requires='num_qubits',
+                       implementation=_num_qubits_proto_from_num_qubits)
+    @value.alternative(requires='_qid_shape_',
+                       implementation=_num_qubits_from_shape)
+    def _num_qubits_(self) -> int:
+        """The number of qubits this gate acts on."""
+
+    def _default_shape_from_num_qubits(self) -> Tuple[int, ...]:
+        num_qubits = self._num_qubits_()
+        if num_qubits is NotImplemented:
+            return NotImplemented
+        return (2,) * num_qubits
+
+    @value.alternative(requires='_num_qubits_',
+                       implementation=_default_shape_from_num_qubits)
+    def _qid_shape_(self) -> Tuple[int, ...]:
+        """Returns a Tuple containing the number of quantum levels of each qid
+        the gate acts on.  E.g. (2, 2, 2) for the three-qubit CCZ gate and
+        (3, 3) for a 2-qutrit ternary gate.
+        """
+
+    def _commutes_on_qids_(self, qids: 'Sequence[cirq.Qid]', other: Any,
+                           atol: float
+                          ) -> Union[bool, NotImplementedType, None]:
+        return NotImplemented
+
+    def _commutes_(self, other: Any,
+                   atol: float) -> Union[None, NotImplementedType, bool]:
+        if not isinstance(other, Gate):
+            return NotImplemented
+        if protocols.qid_shape(self) != protocols.qid_shape(other):
+            return None
+        # HACK: break cycle
+        from cirq.devices import line_qubit
+        qs = line_qubit.LineQid.for_qid_shape(protocols.qid_shape(self))
+        return protocols.commutes(self(*qs), other(*qs))
+
+    def _mul_with_qubits(self, qubits: Tuple['cirq.Qid', ...], other):
+        """cirq.GateOperation.__mul__ delegates to this method."""
+        return NotImplemented
+
+    def _rmul_with_qubits(self, qubits: Tuple['cirq.Qid', ...], other):
+        """cirq.GateOperation.__rmul__ delegates to this method."""
+        return NotImplemented
+
+    def _json_dict_(self) -> Dict[str, Any]:
+        return protocols.obj_to_dict_helper(self, attribute_names=[])
+
+
+TSelf = TypeVar('TSelf', bound='Operation')
 
 
 class Operation(metaclass=abc.ABCMeta):
@@ -237,17 +376,67 @@ class Operation(metaclass=abc.ABCMeta):
     effect into a qubit-independent Gate and the qubits it should be applied to.
     """
 
-    @abc.abstractproperty
-    def qubits(self) -> Tuple[Qid, ...]:
+    @property
+    def gate(self) -> Optional['cirq.Gate']:
+        return None
+
+    @property
+    @abc.abstractmethod
+    def qubits(self) -> Tuple['cirq.Qid', ...]:
         raise NotImplementedError()
 
-    @abc.abstractmethod
-    def with_qubits(self: TSelf_Operation,
-                    *new_qubits: Qid) -> TSelf_Operation:
-        pass
+    def _num_qubits_(self) -> int:
+        """The number of qubits this operation acts on.
 
-    def transform_qubits(self: TSelf_Operation,
-                         func: Callable[[Qid], Qid]) -> TSelf_Operation:
+        By definition, returns the length of `qubits`.
+        """
+        return len(self.qubits)
+
+    def _qid_shape_(self) -> Tuple[int, ...]:
+        return protocols.qid_shape(self.qubits)
+
+    @abc.abstractmethod
+    def with_qubits(self: TSelf, *new_qubits: 'cirq.Qid') -> TSelf:
+        """Returns the same operation, but applied to different qubits.
+
+        Args:
+            new_qubits: The new qubits to apply the operation to. The order must
+                exactly match the order of qubits returned from the operation's
+                `qubits` property.
+        """
+
+    @property
+    def tags(self) -> Tuple[Hashable, ...]:
+        """Returns a tuple of the operation's tags."""
+        return ()
+
+    @property
+    def untagged(self) -> 'cirq.Operation':
+        """Returns the underlying operation without any tags."""
+        return self
+
+    def with_tags(self, *new_tags: Hashable) -> 'cirq.TaggedOperation':
+        """Creates a new TaggedOperation, with this op and the specified tags.
+
+        This method can be used to attach meta-data to specific operations
+        without affecting their functionality.  The intended usage is to
+        attach classes intended for this purpose or strings to mark operations
+        for specific usage that will be recognized by consumers.  Specific
+        examples include ignoring this operation in optimization passes,
+        hardware-specific functionality, or circuit diagram customizability.
+
+        Tags can be a list of any type of object that is useful to identify
+        this operation as long as the type is hashable.  If you wish the
+        resulting operation to be eventually serialized into JSON, you should
+        also restrict the operation to be JSON serializable.
+
+        Args:
+            new_tags: The tags to wrap this operation in.
+        """
+        return TaggedOperation(self, *new_tags)
+
+    def transform_qubits(self: TSelf,
+                         func: Callable[['cirq.Qid'], 'cirq.Qid']) -> TSelf:
         """Returns the same operation, but with different qubits.
 
         Args:
@@ -260,20 +449,214 @@ class Operation(metaclass=abc.ABCMeta):
         """
         return self.with_qubits(*(func(q) for q in self.qubits))
 
-    def controlled_by(self, *control_qubits: Qid) -> 'Operation':
-        """Returns a controlled version of this operation.
+    def controlled_by(self,
+                      *control_qubits: 'cirq.Qid',
+                      control_values: Optional[Sequence[
+                          Union[int, Collection[int]]]] = None
+                     ) -> 'cirq.Operation':
+        """Returns a controlled version of this operation. If no control_qubits
+           are specified, returns self.
 
         Args:
             control_qubits: Qubits to control the operation by. Required.
+            control_values: For which control qubit values to apply the
+                operation.  A sequence of the same length as `control_qubits`
+                where each entry is an integer (or set of integers)
+                corresponding to the qubit value (or set of possible values)
+                where that control is enabled.  When all controls are enabled,
+                the operation is applied.  If unspecified, control values
+                default to 1.
         """
         # Avoids circular import.
-        from cirq.ops import ControlledOperation
-        if control_qubits is None or len(control_qubits) is 0:
-            raise ValueError(
-                "Can't get controlled operation without control qubit. Op: {}"
-                .format(repr(self)))
-        else:
-            return ControlledOperation(control_qubits, self)
+        from cirq.ops.controlled_operation import ControlledOperation
+        if len(control_qubits) == 0:
+            return self
+        return ControlledOperation(control_qubits, self, control_values)
+
+    def with_probability(self,
+                         probability: 'cirq.TParamVal') -> 'cirq.Operation':
+        from cirq.ops.random_gate_channel import RandomGateChannel
+        gate = self.gate
+        if gate is None:
+            raise NotImplementedError("with_probability on gateless operation.")
+        if probability == 1:
+            return self
+        return RandomGateChannel(sub_gate=gate,
+                                 probability=probability).on(*self.qubits)
+
+    def validate_args(self, qubits: Sequence['cirq.Qid']):
+        """Raises an exception if the `qubits` don't match this operation's qid
+        shape.
+
+        Call this method from a subclass's `with_qubits` method.
+
+        Args:
+            qubits: The new qids for the operation.
+
+        Raises:
+            ValueError: The operation had qids that don't match it's qid shape.
+        """
+        _validate_qid_shape(self, qubits)
+
+
+@value.value_equality
+class TaggedOperation(Operation):
+    """A specific operation instance that has been identified with a set
+    of Tags for special processing.  This can be initialized with
+    Using Operation.with_tags(tag) or by TaggedOperation(op, tag).
+
+    Tags added can be of any type, but they should be Hashable in order
+    to allow equality checking.  If you wish to serialize operations into
+    JSON, you should restrict yourself to only use objects that have a JSON
+    serialization.
+
+    See Operation.with_tags() for more information on intended usage.
+    """
+
+    def __init__(self, sub_operation: 'cirq.Operation', *tags: Hashable):
+        self.sub_operation = sub_operation
+        self._tags = tuple(tags)
+
+    @property
+    def qubits(self) -> Tuple['cirq.Qid', ...]:
+        return self.sub_operation.qubits
+
+    @property
+    def gate(self) -> Optional['cirq.Gate']:
+        return self.sub_operation.gate
+
+    def with_qubits(self, *new_qubits: 'cirq.Qid'):
+        return TaggedOperation(self.sub_operation.with_qubits(*new_qubits),
+                               *self._tags)
+
+    def controlled_by(self,
+                      *control_qubits: 'cirq.Qid',
+                      control_values: Optional[Sequence[
+                          Union[int, Collection[int]]]] = None
+                     ) -> 'cirq.Operation':
+        return self.sub_operation.controlled_by(*control_qubits,
+                                                control_values=control_values)
+
+    @property
+    def tags(self) -> Tuple[Hashable, ...]:
+        """Returns a tuple of the operation's tags."""
+        return self._tags
+
+    @property
+    def untagged(self) -> 'cirq.Operation':
+        """Returns the underlying operation without any tags."""
+        return self.sub_operation
+
+    def with_tags(self, *new_tags: Hashable) -> 'cirq.TaggedOperation':
+        """Creates a new TaggedOperation with combined tags.
+
+        Overloads Operation.with_tags to create a new TaggedOperation
+        that has the tags of this operation combined with the new_tags
+        specified as the parameter.
+        """
+        return TaggedOperation(self.sub_operation, *self._tags, *new_tags)
+
+    def __str__(self) -> str:
+        tag_repr = ','.join(repr(t) for t in self._tags)
+        return f'cirq.TaggedOperation({repr(self.sub_operation)}, {tag_repr})'
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def _value_equality_values_(self) -> Any:
+        return (self.sub_operation, self._tags)
+
+    @classmethod
+    def _from_json_dict_(cls, sub_operation, tags, **kwargs):
+        return cls(sub_operation, *tags)
+
+    def _json_dict_(self) -> Dict[str, Any]:
+        return protocols.obj_to_dict_helper(self, ['sub_operation', 'tags'])
+
+    def _decompose_(self) -> 'cirq.OP_TREE':
+        return protocols.decompose(self.sub_operation)
+
+    def _pauli_expansion_(self) -> value.LinearDict[str]:
+        return protocols.pauli_expansion(self.sub_operation)
+
+    def _apply_unitary_(self, args: 'protocols.ApplyUnitaryArgs'
+                       ) -> Union[np.ndarray, None, NotImplementedType]:
+        return protocols.apply_unitary(self.sub_operation, args, default=None)
+
+    def _has_unitary_(self) -> bool:
+        return protocols.has_unitary(self.sub_operation)
+
+    def _unitary_(self) -> Union[np.ndarray, NotImplementedType]:
+        return protocols.unitary(self.sub_operation, default=None)
+
+    def _commutes_(self, other: Any, *, atol: Union[int, float] = 1e-8
+                  ) -> Union[bool, NotImplementedType, None]:
+        return protocols.commutes(self.sub_operation, other, atol=atol)
+
+    def _has_mixture_(self) -> bool:
+        return protocols.has_mixture(self.sub_operation)
+
+    def _mixture_(self) -> Sequence[Tuple[float, Any]]:
+        return protocols.mixture(self.sub_operation, NotImplemented)
+
+    def _has_channel_(self) -> bool:
+        return protocols.has_channel(self.sub_operation)
+
+    def _channel_(self) -> Union[Tuple[np.ndarray], NotImplementedType]:
+        return protocols.channel(self.sub_operation, NotImplemented)
+
+    def _measurement_key_(self) -> str:
+        return protocols.measurement_key(self.sub_operation, NotImplemented)
+
+    def _is_parameterized_(self) -> bool:
+        return protocols.is_parameterized(self.sub_operation) or any(
+            protocols.is_parameterized(tag) for tag in self.tags)
+
+    def _resolve_parameters_(self, resolver):
+        resolved_op = protocols.resolve_parameters(self.sub_operation, resolver)
+        resolved_tags = (
+            protocols.resolve_parameters(tag, resolver) for tag in self._tags)
+        return TaggedOperation(resolved_op, *resolved_tags)
+
+    def _circuit_diagram_info_(self, args: 'cirq.CircuitDiagramInfoArgs'
+                              ) -> 'cirq.CircuitDiagramInfo':
+        sub_op_info = protocols.circuit_diagram_info(self.sub_operation, args,
+                                                     NotImplemented)
+        # Add tag to wire symbol if it exists.
+        if (sub_op_info is not NotImplemented and args.include_tags and
+                sub_op_info.wire_symbols):
+            sub_op_info.wire_symbols = (
+                (sub_op_info.wire_symbols[0] + str(list(self._tags)),) +
+                sub_op_info.wire_symbols[1:])
+        return sub_op_info
+
+    def _trace_distance_bound_(self) -> float:
+        return protocols.trace_distance_bound(self.sub_operation)
+
+    def _phase_by_(self, phase_turns: float,
+                   qubit_index: int) -> 'cirq.Operation':
+        return protocols.phase_by(self.sub_operation, phase_turns, qubit_index)
+
+    def __pow__(self, exponent: Any) -> 'cirq.Operation':
+        return self.sub_operation**exponent
+
+    def __mul__(self, other: Any) -> Any:
+        return self.sub_operation * other
+
+    def __rmul__(self, other: Any) -> Any:
+        return other * self.sub_operation
+
+    def _qasm_(self, args: 'protocols.QasmArgs') -> Optional[str]:
+        return protocols.qasm(self.sub_operation, args=args, default=None)
+
+    def _equal_up_to_global_phase_(self,
+                                   other: Any,
+                                   atol: Union[int, float] = 1e-8
+                                  ) -> Union[NotImplementedType, bool]:
+        return protocols.equal_up_to_global_phase(self.sub_operation,
+                                                  other,
+                                                  atol=atol)
+
 
 @value.value_equality
 class _InverseCompositeGate(Gate):
@@ -282,8 +665,8 @@ class _InverseCompositeGate(Gate):
     def __init__(self, original: Gate) -> None:
         self._original = original
 
-    def num_qubits(self):
-        return self._original.num_qubits()
+    def _qid_shape_(self):
+        return protocols.qid_shape(self._original)
 
     def __pow__(self, power):
         if power == 1:
@@ -293,11 +676,51 @@ class _InverseCompositeGate(Gate):
         return NotImplemented
 
     def _decompose_(self, qubits):
-        return inverse.inverse(decompose.decompose_once_with_qubits(
-            self._original, qubits))
+        return protocols.inverse(
+            protocols.decompose_once_with_qubits(self._original, qubits))
+
+    def _has_unitary_(self):
+        from cirq import protocols, devices
+        qubits = devices.LineQid.for_gate(self)
+        return all(
+            protocols.has_unitary(op)
+            for op in protocols.decompose_once_with_qubits(
+                self._original, qubits))
 
     def _value_equality_values_(self):
         return self._original
 
-    def __repr__(self):
-        return '({!r}**-1)'.format(self._original)
+    def _circuit_diagram_info_(self, args: 'cirq.CircuitDiagramInfoArgs'):
+        sub_info = protocols.circuit_diagram_info(self._original,
+                                                  args,
+                                                  default=NotImplemented)
+        if sub_info is NotImplemented:
+            return NotImplemented
+        sub_info.exponent *= -1
+        return sub_info
+
+    def __repr__(self) -> str:
+        return f'({self._original!r}**-1)'
+
+
+def _validate_qid_shape(val: Any, qubits: Sequence['cirq.Qid']) -> None:
+    """Helper function to validate qubits for gates and operations.
+
+    Raises:
+        ValueError: The operation had qids that don't match it's qid shape.
+    """
+    qid_shape = protocols.qid_shape(val)
+    if len(qubits) != len(qid_shape):
+        raise ValueError('Wrong number of qubits for <{!r}>. '
+                         'Expected {} qubits but got <{!r}>.'.format(
+                             val, len(qid_shape), qubits))
+    if any(qid.dimension != dimension
+           for qid, dimension in zip(qubits, qid_shape)):
+        raise ValueError('Wrong shape of qids for <{!r}>. '
+                         'Expected {} but got {} <{!r}>.'.format(
+                             val, qid_shape,
+                             tuple(qid.dimension for qid in qubits), qubits))
+    if len(set(qubits)) != len(qubits):
+        raise ValueError('Duplicate qids for <{!r}>. '
+                         'Expected unique qids but got <{!r}>.'.format(
+                             val, qubits))

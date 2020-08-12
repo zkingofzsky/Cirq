@@ -1,0 +1,8 @@
+{
+  "cirq_type": "_QubitAsQid",
+  "qubit": {
+    "cirq_type": "NamedQubit",
+    "name": "a"
+  },
+  "dimension": 5
+}

@@ -32,6 +32,21 @@ def test_init():
     assert isinstance(Timestamp(nanos=1.0).raw_picos(), float)
 
 
+def test_str():
+    assert str(Timestamp(picos=1000, nanos=1000)) == 't=1001000'
+    assert str(Timestamp(nanos=5.0)) == 't=5000.0'
+    assert str(Timestamp(picos=-100)) == 't=-100'
+
+
+def test_repr():
+    a = Timestamp(picos=1000, nanos=1000)
+    cirq.testing.assert_equivalent_repr(a)
+    b = Timestamp(nanos=5.0)
+    cirq.testing.assert_equivalent_repr(b)
+    c = Timestamp(picos=-100)
+    cirq.testing.assert_equivalent_repr(c)
+
+
 def test_eq():
     eq = cirq.testing.EqualsTester()
     eq.add_equality_group(Timestamp(),
@@ -65,11 +80,6 @@ def test_cmp():
     assert Timestamp() != 0
     assert not (Timestamp() == Duration())
     assert Timestamp() != Duration()
-
-
-# In python 2, comparisons fallback to __cmp__ and don't fail.
-# But a custom __cmp__ that does fail would result in == failing.
-# So we throw up our hands and let it be.
 
 def test_cmp_vs_other_type():
     with pytest.raises(TypeError):

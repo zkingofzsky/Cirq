@@ -7,21 +7,20 @@ Choose your operating system:
 - [Installing on Windows](#installing-on-windows)
 - [Installing on Docker](#installing-on-docker)
 
-If you want to create a development environment, see [development.md](development.md).
+If you want to create a development environment, see the [development page](dev/development.md).
 
 ---
 
 ### Alpha Disclaimer
 
 **Cirq is currently in alpha.**
-We are still making breaking changes.
-We *will* break your code when we make new releases.
-We recommend that you target a specific version of Cirq, and periodically bump to the latest release.
-That way you have control over when a breaking change affects you.
+We may change or remove parts of Cirq's API when making new releases.
+To be informed of deprecations and breaking changes, subscribe to the
+[cirq-announce google group mailing list](https://groups.google.com/forum/#!forum/cirq-announce).
 
 ### Installing on Linux
 
-0. Make sure you have python 3.5.2 or greater.
+0. Make sure you have python 3.6.0 or greater.
 
     See [Installing Python 3 on Linux](https://docs.python-guide.org/starting/install3/linux/) @ the hitchhiker's guide to python.
 
@@ -34,13 +33,20 @@ That way you have control over when a breaking change affects you.
     python -m pip install cirq
     ```
 
-3. (Optional) install system dependencies that pip can't handle.
+3. (Optional) install other dependencies.
+
+    Install dependencies of features in `cirq.contrib`.
 
     ```bash
-    sudo apt-get install python3-tk texlive-latex-base latexmk
+    python -m pip install cirq[contrib]
     ```
 
-    - Without `python3-tk`, plotting functionality won't work.
+    Install system dependencies that pip can't handle.
+
+    ```bash
+    sudo apt-get install texlive-latex-base latexmk
+    ```
+
     - Without `texlive-latex-base` and `latexmk`, pdf writing functionality will not work.
 
 4. Check that it works!
@@ -70,7 +76,21 @@ That way you have control over when a breaking change affects you.
     python -m pip install cirq
     ```
 
-3. Check that it works!
+3. (Optional) install dependencies of features in `cirq.contrib`.
+
+    ```bash
+    python -m pip install cirq[contrib]
+    ```
+
+    Install system dependencies that pip can't handle.
+
+    ```bash
+    brew cask install mactex
+    ```
+
+    - Without `mactex`, pdf writing functionality will not work.
+
+4. Check that it works!
 
     ```bash
     python -c 'import cirq; print(cirq.google.Foxtail)'
@@ -97,7 +117,13 @@ That way you have control over when a breaking change affects you.
     python -m pip install cirq
     ```
 
-3. Check that it works!
+3. (Optional) install dependencies of features in `cirq.contrib`.
+
+    ```bash
+    python -m pip install cirq[contrib]
+    ```
+
+4. Check that it works!
 
     ```bash
     python -c "import cirq; print(cirq.google.Foxtail)"

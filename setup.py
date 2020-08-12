@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import io
+import os
 from setuptools import find_packages, setup
 
 # This reads the __version__ variable from cirq/_version.py
 __version__ = ''
 exec(open('cirq/_version.py').read())
+
+name = 'cirq'
 
 description = ('A framework for creating, editing, and invoking '
                'Noisy Intermediate Scale Quantum (NISQ) circuits.')
@@ -25,45 +28,50 @@ description = ('A framework for creating, editing, and invoking '
 # README file as long_description.
 long_description = io.open('README.rst', encoding='utf-8').read()
 
+# If CIRQ_UNSTABLE_VERSION is set then we use cirq-unstable as the name of the package
+# and update the version to this value.
+if 'CIRQ_UNSTABLE_VERSION' in os.environ:
+    name = 'cirq-unstable'
+    __version__ = os.environ['CIRQ_UNSTABLE_VERSION']
+    long_description = (
+        "**This is a development version of Cirq and may be "
+        "unstable.**\n\n**For the latest stable release of Cirq "
+        "see**\n`here <https://pypi.org/project/cirq>`__.\n\n" +
+        long_description)
+
 # Read in requirements
 requirements = open('requirements.txt').readlines()
 requirements = [r.strip() for r in requirements]
+contrib_requirements = open('cirq/contrib/contrib-requirements.txt').readlines()
+contrib_requirements = [r.strip() for r in contrib_requirements]
+dev_requirements = open('dev_tools/conf/pip-list-dev-tools.txt').readlines()
+dev_requirements = [r.strip() for r in dev_requirements]
 
 cirq_packages = ['cirq'] + [
     'cirq.' + package for package in find_packages(where='cirq')
 ]
 
-setup(
-    name='cirq',
-    version=__version__,
-    url='http://github.com/quantumlib/cirq',
-    author='The Cirq Developers',
-    author_email='cirq@googlegroups.com',
+# Sanity check
+assert __version__, 'Version string cannot be empty'
 
-    # CAUTION: the semantics of python_requires and how it interacts with PYPI
-    # are extremely inconvenient, so read this before changing it.
-    #
-    # One would assume that, because each wheel within a package specifies a
-    # python_requires line, PYPI would consider the python_requires of the
-    # package to be the union of each of its wheels. This is not the case. What
-    # PYPI actually does is assert that the python_requires of the package is
-    # the python_requires of the *first wheel uploaded to the package*. So if
-    # you have a wheel targeting python 2, and set "python_requires='2.7.*'"
-    # for that wheel, then it doesn't matter how many python 3 wheels you add to
-    # the package; python 3 users will not be able to pip install them.
-    #
-    # The workaround for this problem is to set the actual python_requires of
-    # all wheels in a package to the union of the desired python_requires of all
-    # the wheels in the package (or to not set it at all). Then, when uploading
-    # wheels, ensure that their names encode the version they are targeting. For
-    # example, a wheel named 'cirq-#.#.#-py27-none-any.whl' will only be
-    # installed in python 2.7.
-    python_requires=('>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*, !=3.5.0, '
-                     '!=3.5.1'),
-
-    install_requires=requirements,
-    license='Apache 2',
-    description=description,
-    long_description=long_description,
-    packages=cirq_packages,
-    package_data={'cirq.api.google.v1': ['*.proto']})
+setup(name=name,
+      version=__version__,
+      url='http://github.com/quantumlib/cirq',
+      author='The Cirq Developers',
+      author_email='cirq@googlegroups.com',
+      python_requires=('>=3.6.0'),
+      install_requires=requirements,
+      extras_require={
+          'contrib': contrib_requirements,
+          'dev_env': dev_requirements + contrib_requirements,
+      },
+      license='Apache 2',
+      description=description,
+      long_description=long_description,
+      packages=cirq_packages,
+      package_data={
+          'cirq': ['py.typed'],
+          'cirq.google.api.v1': ['*.proto', '*.pyi'],
+          'cirq.google.api.v2': ['*.proto', '*.pyi'],
+          'cirq.protocols.json_test_data': ['*'],
+      })

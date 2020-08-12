@@ -69,10 +69,9 @@ def test_fallback_diagram():
         def __str__(self):
             return 'MagicOperate'
 
-    circuit = cirq.Circuit.from_ops(
+    circuit = cirq.Circuit(
         MagicOp(cirq.NamedQubit('b')),
-        MagicGate().on(cirq.NamedQubit('b'),
-                       cirq.NamedQubit('a'),
+        MagicGate().on(cirq.NamedQubit('b'), cirq.NamedQubit('a'),
                        cirq.NamedQubit('c')))
     expected_diagram = r"""
 \Qcircuit @R=1em @C=0.75em {
@@ -90,14 +89,10 @@ def test_teleportation_diagram():
     car = cirq.NamedQubit('carrier')
     bob = cirq.NamedQubit('bob')
 
-    circuit = cirq.Circuit.from_ops(
-        cirq.H(car),
-        cirq.CNOT(car, bob),
-        cirq.X(ali)**0.5,
-        cirq.CNOT(ali, car),
-        cirq.H(ali),
-        [cirq.measure(ali), cirq.measure(car)],
-        cirq.CNOT(car, bob),
+    circuit = cirq.Circuit(
+        cirq.H(car), cirq.CNOT(car, bob),
+        cirq.X(ali)**0.5, cirq.CNOT(ali, car), cirq.H(ali),
+        [cirq.measure(ali), cirq.measure(car)], cirq.CNOT(car, bob),
         cirq.CZ(ali, bob))
 
     expected_diagram = r"""
@@ -115,10 +110,7 @@ def test_teleportation_diagram():
 def test_other_diagram():
     a, b, c = cirq.LineQubit.range(3)
 
-    circuit = cirq.Circuit.from_ops(
-        cirq.X(a),
-        cirq.Y(b),
-        cirq.Z(c))
+    circuit = cirq.Circuit(cirq.X(a), cirq.Y(b), cirq.Z(c))
 
     expected_diagram = r"""
 \Qcircuit @R=1em @C=0.75em {
@@ -141,3 +133,20 @@ def test_qcircuit_qubit_namer():
            == r'\lstick{\text{q\textasciicircum{}1}}&')
     assert(qcircuit_diagram.qcircuit_qubit_namer(cirq.NamedQubit('q_{1}'))
            == r'\lstick{\text{q\_\{1\}}}&')
+
+
+def test_two_cx_diagram():
+    # test for no moment indication
+    q0, q1, q2, q3 = cirq.LineQubit.range(4)
+    circuit = cirq.Circuit(cirq.CX(q0, q2), cirq.CX(q1, q3), cirq.CX(q0, q2),
+                           cirq.CX(q1, q3))
+    expected_diagram = r"""
+\Qcircuit @R=1em @C=0.75em {
+ \\
+ &\lstick{\text{0}}& \qw&\control \qw    &         \qw    &\control \qw    &         \qw    &\qw\\
+ &\lstick{\text{1}}& \qw&         \qw\qwx&\control \qw    &         \qw\qwx&\control \qw    &\qw\\
+ &\lstick{\text{2}}& \qw&\targ    \qw\qwx&         \qw\qwx&\targ    \qw\qwx&         \qw\qwx&\qw\\
+ &\lstick{\text{3}}& \qw&         \qw    &\targ    \qw\qwx&         \qw    &\targ    \qw\qwx&\qw\\
+ \\
+}""".strip()
+    assert_has_qcircuit_diagram(circuit, expected_diagram)

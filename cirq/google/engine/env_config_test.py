@@ -13,42 +13,33 @@
 # limitations under the License.
 
 import os
-import mock
+from unittest import mock
+import warnings
 import pytest
-from apiclient import discovery
 
 import cirq
 
 
-@mock.patch.object(discovery, 'build')
+@mock.patch('cirq.google.engine.client.quantum.QuantumEngineServiceClient')
 def test_engine_from_environment(build):
-    # Api key present.
-    with mock.patch.dict(os.environ,
-                         {'CIRQ_QUANTUM_ENGINE_API_KEY': 'key!'},
-                         clear=True):
-        eng = cirq.google.engine_from_environment()
-        assert eng.default_project_id is None
-        assert eng.api_key == 'key!'
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        # Default project id present.
+        env_dict = {'CIRQ_QUANTUM_ENGINE_DEFAULT_PROJECT_ID': 'project!'}
+        with mock.patch.dict(os.environ, env_dict, clear=True):
+            eng = cirq.google.engine_from_environment()
+            assert eng.project_id == 'project!'
 
-    # Nothing present.
-    with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(EnvironmentError,
-                           match='CIRQ_QUANTUM_ENGINE_API_KEY'):
+        # Nothing present.
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(EnvironmentError,
+                               match='CIRQ_QUANTUM_ENGINE_DEFAULT_PROJECT_ID'):
+                _ = cirq.google.engine_from_environment()
+
+
+def test_deprecation():
+    with cirq.testing.assert_logs('engine_from_environment', 'get_engine',
+                                  'deprecated'):
+        env_dict = {'CIRQ_QUANTUM_ENGINE_DEFAULT_PROJECT_ID': 'project!'}
+        with mock.patch.dict(os.environ, env_dict, clear=True):
             _ = cirq.google.engine_from_environment()
-
-    # Default project id present.
-    with mock.patch.dict(os.environ, {
-        'CIRQ_QUANTUM_ENGINE_DEFAULT_PROJECT_ID': 'project!'
-    }, clear=True):
-        with pytest.raises(EnvironmentError,
-                           match='CIRQ_QUANTUM_ENGINE_API_KEY'):
-            _ = cirq.google.engine_from_environment()
-
-    # Both present.
-    with mock.patch.dict(os.environ, {
-        'CIRQ_QUANTUM_ENGINE_DEFAULT_PROJECT_ID': 'project!',
-        'CIRQ_QUANTUM_ENGINE_API_KEY': 'key!',
-    }, clear=True):
-        eng = cirq.google.engine_from_environment()
-        assert eng.default_project_id == 'project!'
-        assert eng.api_key == 'key!'

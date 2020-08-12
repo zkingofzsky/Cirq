@@ -40,10 +40,10 @@ def clifford_optimized_circuit(circuit: circuits.Circuit,
         def continue_condition(op: ops.Operation,
                                current_string: ops.PauliStringPhasor,
                                is_first: bool) -> int:
-            if ops.op_gate_of_type(op, ops.SingleQubitCliffordGate):
+            if isinstance(op.gate, ops.SingleQubitCliffordGate):
                 return (CONTINUE if len(current_string.pauli_string) != 1
                                  else STOP)
-            if ops.op_gate_of_type(op, ops.CZPowGate):
+            if isinstance(op.gate, ops.CZPowGate):
                 return STOP if stop_at_cz else CONTINUE
             if (isinstance(op, ops.PauliStringPhasor) and
                     len(op.qubits) == 1 and
@@ -86,8 +86,8 @@ def clifford_optimized_circuit(circuit: circuits.Circuit,
             trans = remaining_cliff_gate.transform(pauli)
             pauli = trans.to
             quarter_turns *= -1 if trans.flip else 1
-            string_op = ops.PauliStringPhasor(ops.PauliString.from_single(
-                cliff_op.qubits[0], pauli),
+            string_op = ops.PauliStringPhasor(ops.PauliString(
+                pauli(cliff_op.qubits[0])),
                                               exponent_neg=quarter_turns / 2)
 
             merge_i, merge_op, num_passed = find_merge_point(start_i, string_op,
@@ -98,7 +98,12 @@ def clifford_optimized_circuit(circuit: circuits.Circuit,
             qubit, pauli = next(iter(merge_op.pauli_string.items()))
             quarter_turns = round(merge_op.exponent_relative * 2)
             if merge_op.pauli_string.coefficient not in [1, -1]:
-                raise NotImplementedError("TODO: handle all coefficients.")
+                # TODO: Add support for more general phases.
+                # Github issue: https://github.com/quantumlib/Cirq/issues/2962
+                # Legacy coverage ignore, we need test code that hits this.
+                # coverage: ignore
+                raise NotImplementedError(
+                    'Only +1/-1 pauli string coefficients currently supported')
             quarter_turns *= int(merge_op.pauli_string.coefficient.real)
             quarter_turns %= 4
             part_cliff_gate = ops.SingleQubitCliffordGate.from_quarter_turns(
@@ -142,9 +147,8 @@ def clifford_optimized_circuit(circuit: circuits.Circuit,
         if remaining_cliff_gate == ops.SingleQubitCliffordGate.I:
             all_ops.pop(start_i)
             return True
-        else:
-            all_ops[start_i] = remaining_cliff_gate(orig_qubit)
-            return False
+        all_ops[start_i] = remaining_cliff_gate(orig_qubit)
+        return False
 
     def try_merge_cz(cz_op: ops.GateOperation, start_i: int) -> int:
         """Returns the number of operations removed at or before start_i."""
@@ -186,6 +190,4 @@ def clifford_optimized_circuit(circuit: circuits.Circuit,
             i -= num_rm
         i += 1
 
-    return circuits.Circuit.from_ops(
-                all_ops,
-                strategy=circuits.InsertStrategy.EARLIEST)
+    return circuits.Circuit(all_ops, strategy=circuits.InsertStrategy.EARLIEST)

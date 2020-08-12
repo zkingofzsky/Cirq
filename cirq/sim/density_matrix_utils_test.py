@@ -18,139 +18,15 @@ import numpy as np
 import pytest
 
 import cirq
+import cirq.testing
 
 
-def assert_valid_density_matrix(matrix, num_qubits=1):
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(matrix, num_qubits=num_qubits,
-                                     dtype=matrix.dtype), matrix)
+def test_deprecated():
+    with cirq.testing.assert_logs('cirq.to_valid_density_matrix', 'deprecated'):
+        _ = cirq.sim.to_valid_density_matrix(0, 1)
 
-
-def test_to_valid_density_matrix_from_density_matrix():
-    assert_valid_density_matrix(np.array([[1, 0], [0, 0]]))
-    assert_valid_density_matrix(np.array([[0.5, 0], [0, 0.5]]))
-    assert_valid_density_matrix(np.array([[0.5, 0.5], [0.5, 0.5]]))
-    assert_valid_density_matrix(np.array([[0.5, 0.2], [0.2, 0.5]]))
-    assert_valid_density_matrix(np.array([[0.5, 0.5j], [-0.5j, 0.5]]))
-    assert_valid_density_matrix(
-        np.array([[0.5, 0.2 - 0.2j], [0.2 + 0.2j, 0.5]]))
-    assert_valid_density_matrix(np.eye(4) / 4.0, num_qubits=2)
-    assert_valid_density_matrix(np.diag([1, 0, 0, 0]), num_qubits=2)
-    assert_valid_density_matrix(np.ones([4, 4]) / 4.0, num_qubits=2)
-    assert_valid_density_matrix(np.diag([0.2, 0.8, 0, 0]), num_qubits=2)
-    assert_valid_density_matrix(np.array(
-        [[0.2, 0, 0, 0.2 - 0.3j],
-         [0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [0.2 + 0.3j, 0, 0, 0.8]]),
-        num_qubits=2)
-
-
-def test_to_valid_density_matrix_not_square():
-    with pytest.raises(ValueError, match='square'):
-        cirq.to_valid_density_matrix(np.array([[1, 0]]), num_qubits=1)
-    with pytest.raises(ValueError, match='square'):
-        cirq.to_valid_density_matrix(np.array([[1], [0]]), num_qubits=1)
-
-
-def test_to_valid_density_matrix_size_mismatch_num_qubits():
-    with pytest.raises(ValueError, match='size'):
-        cirq.to_valid_density_matrix(np.array([[1, 0], [0, 0]]), num_qubits=2)
-    with pytest.raises(ValueError, match='size'):
-        cirq.to_valid_density_matrix(np.eye(4) / 4.0, num_qubits=1)
-
-
-def test_to_valid_density_matrix_not_hermitian():
-    with pytest.raises(ValueError, match='hermitian'):
-        cirq.to_valid_density_matrix(np.array([[1, 0.1], [0, 0]]), num_qubits=1)
-    with pytest.raises(ValueError, match='hermitian'):
-        cirq.to_valid_density_matrix(np.array([[0.5, 0.5j], [0.5, 0.5j]]),
-                                     num_qubits=1)
-    with pytest.raises(ValueError, match='hermitian'):
-        cirq.to_valid_density_matrix(
-            np.array(
-                [[0.2, 0, 0, -0.2 - 0.3j],
-                 [0, 0, 0, 0],
-                 [0, 0, 0, 0],
-                 [0.2 + 0.3j, 0, 0, 0.8]]),
-            num_qubits=2)
-
-
-def test_to_valid_density_matrix_not_unit_trace():
-    with pytest.raises(ValueError, match='trace 1'):
-        cirq.to_valid_density_matrix(np.array([[1, 0], [0, 0.1]]), num_qubits=1)
-    with pytest.raises(ValueError, match='trace 1'):
-        cirq.to_valid_density_matrix(np.array([[1, 0], [0, -0.1]]),
-                                     num_qubits=1)
-    with pytest.raises(ValueError, match='trace 1'):
-        cirq.to_valid_density_matrix(np.zeros([2, 2]), num_qubits=1)
-
-
-def test_to_valid_density_matrix_not_positive_semidefinite():
-    with pytest.raises(ValueError, match='positive semidefinite'):
-        cirq.to_valid_density_matrix(
-            np.array([[1.1, 0], [0, -0.1]], dtype=np.complex64), num_qubits=1)
-    with pytest.raises(ValueError, match='positive semidefinite'):
-        cirq.to_valid_density_matrix(
-            np.array([[0.6, 0.5], [0.5, 0.4]], dtype=np.complex64),
-            num_qubits=1)
-
-
-def test_to_valid_density_matrix_wrong_dtype():
-    with pytest.raises(ValueError, match='dtype'):
-        cirq.to_valid_density_matrix(
-            np.array([[1, 0], [0, 0]], dtype=np.complex64),
-            num_qubits=1, dtype=np.complex128)
-
-
-def test_to_valid_density_matrix_from_state():
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(
-            density_matrix_rep=np.array([1, 0], dtype=np.complex64),
-            num_qubits=1),
-        np.array([[1, 0], [0, 0]]))
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(
-            density_matrix_rep=np.array([np.sqrt(0.3), np.sqrt(0.7)],
-                                        dtype=np.complex64),
-            num_qubits=1),
-        np.array([[0.3, np.sqrt(0.3 * 0.7)], [np.sqrt(0.3 * 0.7), 0.7]]))
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(
-            density_matrix_rep=np.array([np.sqrt(0.5), np.sqrt(0.5) * 1j],
-                                        dtype=np.complex64),
-            num_qubits=1),
-        np.array([[0.5, -0.5j], [0.5j, 0.5]]))
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(
-            density_matrix_rep=np.array([0.5] * 4, dtype=np.complex64),
-            num_qubits=2),
-        0.25 * np.ones((4, 4)))
-
-
-def test_to_valid_density_matrix_from_state_invalid_state():
-    with pytest.raises(ValueError, match="2 qubits"):
-        cirq.to_valid_density_matrix(np.array([1, 0]), num_qubits=2)
-
-
-def test_to_valid_density_matrix_from_computational_basis():
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(density_matrix_rep=0, num_qubits=1),
-        np.array([[1, 0], [0, 0]]))
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(density_matrix_rep=1, num_qubits=1),
-        np.array([[0, 0], [0, 1]]))
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(density_matrix_rep=2, num_qubits=2),
-        np.array([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]]))
-    np.testing.assert_almost_equal(
-        cirq.to_valid_density_matrix(density_matrix_rep=0, num_qubits=0),
-        np.array([[1]]))
-
-
-def test_to_valid_density_matrix_from_state_invalid_computational_basis():
-    with pytest.raises(ValueError, match="positive"):
-        cirq.to_valid_density_matrix(-1, num_qubits=2)
+    with cirq.testing.assert_logs('cirq.von_neumann_entropy', 'deprecated'):
+        _ = cirq.sim.von_neumann_entropy(np.eye(2) / 2)
 
 
 def test_sample_density_matrix_big_endian():
@@ -204,6 +80,22 @@ def test_sample_density_matrix():
                                 [[False]])
         np.testing.assert_equal(cirq.sample_density_matrix(matrix, [0]),
                                 [[False]])
+
+
+def test_sample_density_matrix_seed():
+    density_matrix = 0.5 * np.eye(2)
+
+    samples = cirq.sample_density_matrix(density_matrix, [0],
+                                         repetitions=10,
+                                         seed=1234)
+    assert np.array_equal(samples, [[False], [True], [False], [True], [True],
+                                    [False], [False], [True], [True], [True]])
+
+    samples = cirq.sample_density_matrix(density_matrix, [0],
+                                         repetitions=10,
+                                         seed=np.random.RandomState(1234))
+    assert np.array_equal(samples, [[False], [True], [False], [True], [True],
+                                    [False], [False], [True], [True], [True]])
 
 
 def test_sample_empty_density_matrix():
@@ -266,6 +158,19 @@ def test_sample_density_matrix_no_indices():
     matrix = cirq.to_valid_density_matrix(0, 3)
     bits = cirq.sample_density_matrix(matrix, [])
     np.testing.assert_almost_equal(bits, np.zeros(shape=(1, 0)))
+
+
+def test_sample_density_matrix_validate_qid_shape():
+    matrix = cirq.to_valid_density_matrix(0, 3)
+    cirq.sample_density_matrix(matrix, [], qid_shape=(2, 2, 2))
+    with pytest.raises(ValueError,
+                       match='Matrix size does not match qid shape'):
+        cirq.sample_density_matrix(matrix, [], qid_shape=(2, 2, 1))
+    matrix2 = cirq.to_valid_density_matrix(0, qid_shape=(1, 2, 3))
+    cirq.sample_density_matrix(matrix2, [], qid_shape=(1, 2, 3))
+    with pytest.raises(ValueError,
+                       match='Matrix size does not match qid shape'):
+        cirq.sample_density_matrix(matrix2, [], qid_shape=(2, 2, 2))
 
 
 def test_measure_density_matrix_computational_basis():
@@ -354,6 +259,20 @@ def test_measure_density_matrix_collapse():
         assert bits == [False]
 
 
+def test_measure_density_matrix_seed():
+    n = 5
+    matrix = np.eye(2**n) / 2**n
+
+    bits, out_matrix1 = cirq.measure_density_matrix(matrix, range(n), seed=1234)
+    assert bits == [False, False, True, True, False]
+
+    bits, out_matrix2 = cirq.measure_density_matrix(
+        matrix, range(n), seed=np.random.RandomState(1234))
+    assert bits == [False, False, True, True, False]
+
+    np.testing.assert_allclose(out_matrix1, out_matrix2)
+
+
 def test_measure_density_matrix_out_is_matrix():
     matrix = matrix_000_plus_010()
     bits, out_matrix = cirq.measure_density_matrix(matrix, [2, 1, 0],
@@ -376,6 +295,10 @@ def test_measure_state_out_is_not_matrix():
 def test_measure_density_matrix_not_square():
     with pytest.raises(ValueError, match='not square'):
         cirq.measure_density_matrix(np.array([1, 0, 0]), [1])
+    with pytest.raises(ValueError, match='not square'):
+        cirq.measure_density_matrix(np.array([1, 0, 0, 0]).reshape((2, 1, 2)),
+                                    [1],
+                                    qid_shape=(2, 1))
 
 
 def test_measure_density_matrix_not_power_of_two():
@@ -388,6 +311,13 @@ def test_measure_density_matrix_not_power_of_two():
 def test_measure_density_matrix_higher_powers_of_two():
     with pytest.raises(ValueError, match='powers of two'):
         cirq.measure_density_matrix(np.ones((2, 4, 2, 4)) / 8, [1])
+
+
+def test_measure_density_matrix_tensor_different_left_right_shape():
+    with pytest.raises(ValueError, match='not equal'):
+        cirq.measure_density_matrix(np.array([1, 0, 0, 0]).reshape(
+            (2, 2, 1, 1)), [1],
+                                    qid_shape=(2, 1))
 
 
 def test_measure_density_matrix_out_of_range():
@@ -429,3 +359,14 @@ def test_measure_state_empty_density_matrix():
     bits, out_matrix = cirq.measure_density_matrix(matrix, [])
     assert [] == bits
     np.testing.assert_almost_equal(matrix, out_matrix)
+
+
+@pytest.mark.parametrize('seed', [17, 35, 48])
+def test_to_valid_density_matrix_on_simulator_output(seed):
+    circuit = cirq.testing.random_circuit(qubits=5,
+                                          n_moments=20,
+                                          op_density=0.9,
+                                          random_state=seed)
+    simulator = cirq.DensityMatrixSimulator()
+    result = simulator.simulate(circuit)
+    _ = cirq.to_valid_density_matrix(result.final_density_matrix, num_qubits=5)

@@ -33,6 +33,9 @@ class GoodGate(cirq.SingleQubitGate):
         self.phase_exponent = cirq.canonicalize_half_turns(phase_exponent)
         self.exponent = exponent
 
+    def _has_unitary_(self):
+        return not cirq.is_parameterized(self)
+
     def _unitary_(self) -> Union[np.ndarray, NotImplementedType]:
         if cirq.is_parameterized(self):
             return NotImplemented
@@ -101,6 +104,11 @@ class GoodGate(cirq.SingleQubitGate):
     def _is_parameterized_(self) -> bool:
         return (isinstance(self.exponent, sympy.Basic) or
                 isinstance(self.phase_exponent, sympy.Basic))
+
+    def _resolve_parameters_(self, param_resolver) -> 'GoodGate':
+        return GoodGate(phase_exponent=param_resolver.value_of(
+            self.phase_exponent),
+                        exponent=param_resolver.value_of(self.exponent))
 
     def _identity_tuple(self):
         return (GoodGate,
@@ -249,3 +257,17 @@ def test_assert_eigengate_implements_consistent_protocols():
         cirq.testing.assert_eigengate_implements_consistent_protocols(
             BadEigenGate,
             global_vals={'BadEigenGate': BadEigenGate})
+
+
+def test_assert_commutes_magic_method_consistent_with_unitaries():
+    gate_op = cirq.CNOT(*cirq.LineQubit.range(2))
+    with pytest.raises(TypeError):
+        cirq.testing.assert_commutes_magic_method_consistent_with_unitaries(
+            gate_op)
+
+    exponents = [sympy.Symbol('s'), 0.1, 0.2]
+    gates = [cirq.ZPowGate(exponent=e) for e in exponents]
+    cirq.testing.assert_commutes_magic_method_consistent_with_unitaries(*gates)
+
+    cirq.testing.assert_commutes_magic_method_consistent_with_unitaries(
+        cirq.Z, cirq.CNOT)

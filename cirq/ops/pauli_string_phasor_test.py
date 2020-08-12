@@ -257,7 +257,7 @@ def test_merge_with():
         op1.merged_with(op2)
 
 
-def test_is_parametrized():
+def test_is_parameterized():
     op = cirq.PauliStringPhasor(cirq.PauliString({}))
     assert not cirq.is_parameterized(op)
     assert not cirq.is_parameterized(op**0.1)
@@ -276,12 +276,12 @@ def test_with_parameters_resolved_by():
 def test_drop_negligible():
     q0, = _make_qubits(1)
     sym = sympy.Symbol('a')
-    circuit = cirq.Circuit.from_ops(
+    circuit = cirq.Circuit(
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z}))**0.25,
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z}))**1e-10,
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z}))**sym,
     )
-    expected = cirq.Circuit.from_ops(
+    expected = cirq.Circuit(
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z}))**0.25,
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z}))**sym,
     )
@@ -293,41 +293,41 @@ def test_drop_negligible():
 def test_manual_default_decompose():
     q0, q1, q2 = _make_qubits(3)
 
-    mat = cirq.Circuit.from_ops(
+    mat = cirq.Circuit(
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z}))**0.25,
         cirq.Z(q0)**-0.25,
-    ).to_unitary_matrix()
+    ).unitary()
     cirq.testing.assert_allclose_up_to_global_phase(mat,
                                                     np.eye(2),
                                                     rtol=1e-7,
                                                     atol=1e-7)
 
-    mat = cirq.Circuit.from_ops(
+    mat = cirq.Circuit(
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Y}))**0.25,
         cirq.Y(q0)**-0.25,
-    ).to_unitary_matrix()
+    ).unitary()
     cirq.testing.assert_allclose_up_to_global_phase(mat,
                                                     np.eye(2),
                                                     rtol=1e-7,
                                                     atol=1e-7)
 
-    mat = cirq.Circuit.from_ops(
+    mat = cirq.Circuit(
         cirq.PauliStringPhasor(
             cirq.PauliString({
                 q0: cirq.Z,
                 q1: cirq.Z,
                 q2: cirq.Z
-            }))).to_unitary_matrix()
+            }))).unitary()
     cirq.testing.assert_allclose_up_to_global_phase(
         mat, np.diag([1, -1, -1, 1, -1, 1, 1, -1]), rtol=1e-7, atol=1e-7)
 
-    mat = cirq.Circuit.from_ops(
+    mat = cirq.Circuit(
         cirq.PauliStringPhasor(
             cirq.PauliString({
                 q0: cirq.Z,
                 q1: cirq.Y,
                 q2: cirq.X
-            }))**0.5).to_unitary_matrix()
+            }))**0.5).unitary()
     cirq.testing.assert_allclose_up_to_global_phase(
         mat,
         np.array([
@@ -356,10 +356,9 @@ def test_default_decompose(paulis, phase_exponent_negative: float, sign: int):
     # Get matrix from decomposition
     pauli_string = cirq.PauliString({q: p for q, p in zip(qubits, paulis)},
                                     sign)
-    actual = cirq.Circuit.from_ops(
-        cirq.PauliStringPhasor(
-            pauli_string,
-            exponent_neg=phase_exponent_negative)).to_unitary_matrix()
+    actual = cirq.Circuit(
+        cirq.PauliStringPhasor(pauli_string,
+                               exponent_neg=phase_exponent_negative)).unitary()
 
     # Calculate expected matrix
     to_z_mats = {
@@ -384,13 +383,13 @@ def test_decompose_with_symbol():
     q0, = _make_qubits(1)
     ps = cirq.PauliString({q0: cirq.Y})
     op = cirq.PauliStringPhasor(ps, exponent_neg=sympy.Symbol('a'))
-    circuit = cirq.Circuit.from_ops(op)
+    circuit = cirq.Circuit(op)
     cirq.ExpandComposite().optimize_circuit(circuit)
     cirq.testing.assert_has_diagram(circuit, "q0: ───X^0.5───Z^a───X^-0.5───")
 
     ps = cirq.PauliString({q0: cirq.Y}, -1)
     op = cirq.PauliStringPhasor(ps, exponent_neg=sympy.Symbol('a'))
-    circuit = cirq.Circuit.from_ops(op)
+    circuit = cirq.Circuit(op)
     cirq.ExpandComposite().optimize_circuit(circuit)
     cirq.testing.assert_has_diagram(circuit,
                                     "q0: ───X^0.5───X───Z^a───X───X^-0.5───")
@@ -398,7 +397,7 @@ def test_decompose_with_symbol():
 
 def test_text_diagram():
     q0, q1, q2 = _make_qubits(3)
-    circuit = cirq.Circuit.from_ops(
+    circuit = cirq.Circuit(
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Z})),
         cirq.PauliStringPhasor(cirq.PauliString({q0: cirq.Y}))**0.25,
         cirq.PauliStringPhasor(
@@ -483,8 +482,8 @@ def test_str():
         }, -1))**-0.5
     assert str(ps) == '(X(q0)*Y(q1)*Z(q2))**0.5'
 
-    assert str(np.exp(1j * np.pi * cirq.X(q0) *
-                      cirq.Y(q1))) == 'exp(iπ*X(q0)*Y(q1))'
-    assert str(np.exp(-0.5j * np.pi * cirq.X(q0) *
-                      cirq.Y(q1))) == 'exp(-iπ0.5*X(q0)*Y(q1))'
-    assert str(np.exp(1j * np.pi * cirq.PauliString())) == 'exp(iπ*I)'
+    assert str(np.exp(0.5j * np.pi * cirq.X(q0) *
+                      cirq.Y(q1))) == 'exp(iπ0.5*X(q0)*Y(q1))'
+    assert str(np.exp(-0.25j * np.pi * cirq.X(q0) *
+                      cirq.Y(q1))) == 'exp(-iπ0.25*X(q0)*Y(q1))'
+    assert str(np.exp(0.5j * np.pi * cirq.PauliString())) == 'exp(iπ0.5*I)'
